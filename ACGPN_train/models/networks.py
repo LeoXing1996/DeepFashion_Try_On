@@ -1,4 +1,4 @@
-### Copyright (C) 2017 NVIDIA Corporation. All rights reserved. 
+### Copyright (C) 2017 NVIDIA Corporation. All rights reserved.
 ### Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 import torch
 import os
@@ -66,7 +66,7 @@ def define_Unet(input_nc, gpu_ids=[]):
 
 
 def define_UnetMask(input_nc, gpu_ids=[]):
-    netG = UnetMask(input_nc,output_nc=4)
+    netG = UnetMask(input_nc, output_nc=4)
     netG.cuda(gpu_ids[0])
     netG.apply(weights_init)
     return netG
@@ -1525,7 +1525,7 @@ class BoundedGridLocNet(nn.Module):
         ry_loss=torch.max(ry,row_y).mean()
         cx_loss=torch.max(cx,col_x).mean()
         cy_loss=torch.max(cy,col_y).mean()
-        
+
 
         return  coor,rx_loss,ry_loss,cx_loss,cy_loss,rg_loss,cg_loss
 

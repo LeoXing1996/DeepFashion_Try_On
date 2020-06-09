@@ -16,8 +16,8 @@ import datetime
 import ipdb
 
 writer = SummaryWriter('runs/uniform_all')
-SIZE=320
-NC=14
+SIZE = 320
+NC = 14
 
 
 def generate_label_plain(inputs):
@@ -39,13 +39,13 @@ def morpho(mask, iter):
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     new = []
     for i in range(len(mask)):
-        tem=mask[i].squeeze().reshape(256,192,1)*255
-        tem=tem.astype(np.uint8)
-        tem=cv2.dilate(tem,kernel,iterations=iter)
-        tem=tem.astype(np.float64)
-        tem=tem.reshape(1,256,192)
+        tem = mask[i].squeeze().reshape(256, 192, 1)*255
+        tem = tem.astype(np.uint8)
+        tem = cv2.dilate(tem, kernel, iterations=iter)
+        tem = tem.astype(np.float64)
+        tem = tem.reshape(1, 256, 192)
         new.append(tem.astype(np.float64)/255.0)
-    new=np.stack(new)
+    new = np.stack(new)
     return new
 
 
@@ -60,35 +60,35 @@ def generate_label_color(inputs):
     return input_label
 
 
-def complete_compose(img,mask,label):
-    label=label.cpu().numpy()
-    M_f=label>0
-    M_f=M_f.astype(np.int)
-    M_f=torch.FloatTensor(M_f).cuda()
-    masked_img=img*(1-mask)
-    M_c=(1-mask.cuda())*M_f
-    M_c=M_c+torch.zeros(img.shape).cuda()  ##broadcasting
-    return masked_img,M_c,M_f
+def complete_compose(img, mask, label):
+    label = label.cpu().numpy()
+    M_f = label > 0
+    M_f = M_f.astype(np.int)
+    M_f = torch.FloatTensor(M_f).cuda()
+    masked_img = img*(1-mask)
+    M_c = (1-mask.cuda())*M_f
+    M_c = M_c+torch.zeros(img.shape).cuda()  ##broadcasting
+    return masked_img, M_c, M_f
 
 
-def compose(label,mask,color_mask,edge,color,noise):
+def compose(label, mask, color_mask, edge, color, noise):
     # check=check>0
     # print(check)
-    masked_label=label*(1-mask)
-    masked_edge=mask*edge
-    masked_color_strokes=mask*(1-color_mask)*color
-    masked_noise=mask*noise
-    return masked_label,masked_edge,masked_color_strokes,masked_noise
+    masked_label = label*(1-mask)
+    masked_edge = mask*edge
+    masked_color_strokes = mask*(1-color_mask)*color
+    masked_noise = mask*noise
+    return masked_label, masked_edge, masked_color_strokes, masked_noise
 
 
 def changearm(old_label):
-    label=old_label
-    arm1=torch.FloatTensor((data['label'].cpu().numpy()==11).astype(np.int))
-    arm2=torch.FloatTensor((data['label'].cpu().numpy()==13).astype(np.int))
-    noise=torch.FloatTensor((data['label'].cpu().numpy()==7).astype(np.int))
-    label=label*(1-arm1)+arm1*4
-    label=label*(1-arm2)+arm2*4
-    label=label*(1-noise)+noise*4
+    label = old_label
+    arm1 = torch.FloatTensor((data['label'].cpu().numpy() == 11).astype(np.int))
+    arm2 = torch.FloatTensor((data['label'].cpu().numpy() == 13).astype(np.int))
+    noise = torch.FloatTensor((data['label'].cpu().numpy() == 7).astype(np.int))
+    label = label*(1-arm1)+arm1*4
+    label = label*(1-arm2)+arm2*4
+    label = label*(1-noise)+noise*4
     return label
 
 
@@ -99,7 +99,7 @@ iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
 if opt.continue_train:
     try:
         start_epoch, epoch_iter = np.loadtxt(iter_path, delimiter=',', dtype=int)
-    except:
+    except FileNotFoundError:
         start_epoch, epoch_iter = 1, 0
     print('Resuming from epoch %d at iteration %d' % (start_epoch, epoch_iter))
 else:
@@ -167,7 +167,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         # calculate final loss scalar
         loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5
-        loss_G = loss_dict['G_GAN']+loss_dict.get('G_GAN_Feat', 0)+ \
+        loss_G = loss_dict['G_GAN']+loss_dict.get('G_GAN_Feat', 0) + \
             loss_dict.get('G_VGG', 0)+torch.mean(L1_loss+CE_loss+rx+ry+cx+cy+rg+cg)
 
         writer.add_scalar('loss_d', loss_D, step)
@@ -214,13 +214,13 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         step += 1
         iter_end_time = time.time()
         iter_delta_time = iter_end_time - iter_start_time
-        step_delta = (step_per_batch-step%step_per_batch) + step_per_batch*(opt.niter + opt.niter_decay-epoch)
+        step_delta = (step_per_batch - step % step_per_batch) + step_per_batch*(opt.niter + opt.niter_decay-epoch)
         eta = iter_delta_time*step_delta
         eta = str(datetime.timedelta(seconds=int(eta)))
         time_stamp = datetime.datetime.now()
         now = time_stamp.strftime('%Y.%m.%d-%H:%M:%S')
         #print('{}:{}:[step-{}]--[loss_G-{:.6f}]--[loss_D-{:.6f}]--[ETA-{}]-[rx{}]-[ry{}]-[cx{}]-[cy{}]-[rg{}]-[cg{}]'.format(now,epoch_iter,step, loss_G, loss_D, eta,rx,ry,cx,cy,rg,cg))
-        print('{}:{}:[step-{}]--[loss_G-{:.6f}]--[loss_D-{:.6f}]--[ETA-{}]'.format(now,epoch_iter,step, loss_G,loss_D, eta))
+        print('{}:{}:[step-{}]--[loss_G-{:.6f}]--[loss_D-{:.6f}]--[ETA-{}]'.format(now, epoch_iter, step, loss_G, loss_D, eta))
 
         ### save latest model
         if total_steps % opt.save_latest_freq == save_delta:
