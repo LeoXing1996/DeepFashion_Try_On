@@ -1,4 +1,4 @@
-### Copyright (C) 2017 NVIDIA Corporation. All rights reserved. 
+### Copyright (C) 2017 NVIDIA Corporation. All rights reserved.
 ### Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 import numpy as np
 import torch
@@ -34,7 +34,7 @@ def generate_discrete_label(inputs, label_nc,onehot=True,encode=True):
     oneHot_size = (size[0], label_nc, size[2], size[3])
     input_label = torch.cuda.FloatTensor(torch.Size(oneHot_size)).zero_()
     input_label = input_label.scatter_(1, label_map.data.long().cuda(), 1.0)
-                      
+
     return input_label
 def encode(label_map,size):
     label_nc=14
@@ -46,7 +46,7 @@ def encode(label_map,size):
 class Pix2PixHDModel(BaseModel):
     def name(self):
         return 'Pix2PixHDModel'
-    
+
     def init_loss_filter(self, use_gan_feat_loss, use_vgg_loss):
         flags = (True, use_gan_feat_loss, use_vgg_loss, True, True)
         def loss_filter(g_gan, g_gan_feat, g_vgg, d_real, d_fake):
@@ -97,9 +97,9 @@ class Pix2PixHDModel(BaseModel):
         input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
         self.count=0
         self.perm=torch.randperm(1024*4)
-        ##### define networks        
+        ##### define networks
         # Generator network
-        netG_input_nc = input_nc        
+        netG_input_nc = input_nc
         # Main Generator
         with torch.no_grad():
             pass
@@ -121,8 +121,8 @@ class Pix2PixHDModel(BaseModel):
             self.D2=self.get_D(20+18,opt)
             self.D=self.get_D(27,opt)
             self. D3=self.get_D(7,opt)
-            #self.netB = networks.define_B(netB_input_nc, opt.output_nc, 32, 3, 3, opt.norm, gpu_ids=self.gpu_ids)        
-            
+            #self.netB = networks.define_B(netB_input_nc, opt.output_nc, 32, 3, 3, opt.norm, gpu_ids=self.gpu_ids)
+
         if self.opt.verbose:
                 print('---------- Networks initialized -------------')
 
@@ -151,8 +151,8 @@ class Pix2PixHDModel(BaseModel):
 
             # define loss functions
             self.loss_filter = self.init_loss_filter(not opt.no_ganFeat_loss, not opt.no_vgg_loss)
-            
-            self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan, tensor=self.Tensor)   
+
+            self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan, tensor=self.Tensor)
             self.criterionFeat = torch.nn.L1Loss()
             if not opt.no_vgg_loss:
                 self.criterionVGG = networks.VGGLoss(self.gpu_ids)
@@ -161,7 +161,7 @@ class Pix2PixHDModel(BaseModel):
             self.loss_names = self.loss_filter('G_GAN','G_GAN_Feat','G_VGG','D_real','D_fake')
             # initialize optimizers
             # optimizer G
-            if opt.niter_fix_global > 0:                
+            if opt.niter_fix_global > 0:
                 import sys
                 if sys.version_info >= (3,0):
                     finetune_list = set()
@@ -171,17 +171,17 @@ class Pix2PixHDModel(BaseModel):
 
                 params_dict = dict(self.netG.named_parameters())
                 params = []
-                for key, value in params_dict.items():       
-                    if key.startswith('model' + str(opt.n_local_enhancers)):                    
+                for key, value in params_dict.items():
+                    if key.startswith('model' + str(opt.n_local_enhancers)):
                         params += [value]
-                        finetune_list.add(key.split('.')[0])  
+                        finetune_list.add(key.split('.')[0])
                 print('------------- Only training the local enhancer ork (for %d epochs) ------------' % opt.niter_fix_global)
-                print('The layers that are finetuned are ', sorted(finetune_list))                         
+                print('The layers that are finetuned are ', sorted(finetune_list))
             else:
                 params =list(self.Unet.parameters())+list(self.G.parameters())+list(self.G1.parameters())+list(self.G2.parameters())
             self.optimizer_G = torch.optim.Adam(params, lr=0.0002, betas=(opt.beta1, 0.999))
 
-            # optimizer D                        
+            # optimizer D
             params =list(self.D3.parameters())+list(self.D.parameters())+list(self.D2.parameters())+list(self.D1.parameters())
             self.optimizer_D = torch.optim.Adam(params, lr=0.0002, betas=(opt.beta1, 0.999))
 
@@ -198,11 +198,11 @@ class Pix2PixHDModel(BaseModel):
                 self.load_network(self.D3, 'D3', opt.which_epoch, pretrained_path)
                 #self.load_network(self.optimizer_G, 'OG', opt.which_epoch, pretrained_path)
                 #self.load_network(self.optimizer_D, 'OD', opt.which_epoch, pretrained_path)
-   
-            # optimizer G + B                        
-            #params = list(self.netG.parameters()) + list(self.netB.parameters())     
+
+            # optimizer G + B
+            #params = list(self.netG.parameters()) + list(self.netB.parameters())
             #self.optimizer_GB = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
-    
+
     def encode_input(self,label_map, clothes_mask,all_clothes_label):
         size = label_map.size()
         oneHot_size = (size[0], 14, size[2], size[3])
@@ -214,7 +214,7 @@ class Pix2PixHDModel(BaseModel):
 
         c_label=torch.cuda.FloatTensor(torch.Size(oneHot_size)).zero_()
         c_label=c_label.scatter_(1,all_clothes_label.data.long().cuda(),1.0)
- 
+
         input_label = Variable(input_label)
 
         return input_label,masked_label,c_label
@@ -244,7 +244,7 @@ class Pix2PixHDModel(BaseModel):
 
     def discriminate(self,netD ,input_label, test_image, use_pool=False):
         input_concat = torch.cat((input_label, test_image.detach()), dim=1)
-        if use_pool:            
+        if use_pool:
             fake_query = self.fake_pool.query(input_concat)
             return netD.forward(fake_query)
         else:
@@ -257,7 +257,7 @@ class Pix2PixHDModel(BaseModel):
         noise = torch.tensor(noise, dtype=torch.float32)
         return noise.cuda()
     #data['label'],data['edge'],img_fore.cuda()),Variable(mask_clothes, ,Variable(data['color'].cuda()),Variable(all_clothes_label.cuda()))
-    
+
     def forward(self,label,pre_clothes_mask,img_fore,clothes_mask,clothes,all_clothes_label,real_image,pose,mask):
         # Encode Inputs
         #ipdb.set_trace()
@@ -289,7 +289,7 @@ class Pix2PixHDModel(BaseModel):
         fake_cl=self.G2.refine(G2_in)
         fake_cl=self.sigmoid(fake_cl)
         CE_loss += self.BCE(fake_cl, clothes_mask)*10
-        
+
         #ipdb.set_trace()
         fake_cl_dis=torch.FloatTensor((fake_cl.detach().cpu().numpy()>0.5).astype(np.float)).cuda()
         new_arm1_mask=torch.FloatTensor((armlabel_map.cpu().numpy()==11).astype(np.float)).cuda()
@@ -308,7 +308,7 @@ class Pix2PixHDModel(BaseModel):
         armlabel_map=armlabel_map*(1-fake_cl_dis)+fake_cl_dis*4
 
 
- 
+
         fake_c, warped, warped_mask,rx,ry,cx,cy,rg,cg = self.Unet(clothes, clothes_mask,pre_clothes_mask)
         #ipdb.set_trace()
         composition_mask = fake_c[:, 3, :, :]
@@ -411,19 +411,19 @@ class Pix2PixHDModel(BaseModel):
         pass
 
         #self.save_network(self.netB, 'B', which_epoch, self.gpu_ids)
-      
+
     def update_fixed_params(self):
         # after fixing the global generator for a number of iterations, also start finetuning it
         params = list(self.netG.parameters())
         if self.gen_features:
-            params += list(self.netE.parameters())           
+            params += list(self.netE.parameters())
         self.optimizer_G = torch.optim.Adam(params, lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
         if self.opt.verbose:
             print('------------ Now also finetuning global generator -----------')
 
     def update_learning_rate(self):
         lrd = self.opt.lr / self.opt.niter_decay
-        lr = self.old_lr - lrd        
+        lr = self.old_lr - lrd
         for param_group in self.optimizer_D.param_groups:
             param_group['lr'] = lr
         for param_group in self.optimizer_G.param_groups:
@@ -437,4 +437,4 @@ class InferenceModel(Pix2PixHDModel):
         label = inp
         return self.inference(label)
 
-        
+

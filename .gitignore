@@ -1,0 +1,13 @@
+*.idea
+*.vscode
+*.ipynb
+*.zip
+
+Data_preprocessing/
+!Data_preprocessing/readme.txt
+
+*/__pycache__/
+*/*/__pycache__/
+*/checkpoints/
+*/runs/
+

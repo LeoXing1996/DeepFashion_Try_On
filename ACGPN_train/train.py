@@ -1,4 +1,4 @@
-### Copyright (C) 2017 NVIDIA Corporation. All rights reserved. 
+### Copyright (C) 2017 NVIDIA Corporation. All rights reserved.
 ### Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 import time
 from collections import OrderedDict
@@ -18,22 +18,26 @@ import ipdb
 writer = SummaryWriter('runs/uniform_all')
 SIZE=320
 NC=14
+
+
 def generate_label_plain(inputs):
     size = inputs.size()
     pred_batch = []
     for input in inputs:
-        input = input.view(1, NC, 256,192)
+        input = input.view(1, NC, 256, 192)
         pred = np.squeeze(input.data.max(1)[1].cpu().numpy(), axis=0)
         pred_batch.append(pred)
 
     pred_batch = np.array(pred_batch)
     pred_batch = torch.from_numpy(pred_batch)
-    label_batch = pred_batch.view(size[0], 1, 256,192)
+    label_batch = pred_batch.view(size[0], 1, 256, 192)
 
     return label_batch
-def morpho(mask,iter):
+
+
+def morpho(mask, iter):
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    new=[]
+    new = []
     for i in range(len(mask)):
         tem=mask[i].squeeze().reshape(256,192,1)*255
         tem=tem.astype(np.uint8)
@@ -43,6 +47,8 @@ def morpho(mask,iter):
         new.append(tem.astype(np.float64)/255.0)
     new=np.stack(new)
     return new
+
+
 def generate_label_color(inputs):
     label_batch = []
     for i in range(len(inputs)):
@@ -52,6 +58,8 @@ def generate_label_color(inputs):
     input_label = torch.from_numpy(label_batch)
 
     return input_label
+
+
 def complete_compose(img,mask,label):
     label=label.cpu().numpy()
     M_f=label>0
@@ -59,8 +67,9 @@ def complete_compose(img,mask,label):
     M_f=torch.FloatTensor(M_f).cuda()
     masked_img=img*(1-mask)
     M_c=(1-mask.cuda())*M_f
-    M_c=M_c+torch.zeros(img.shape).cuda()##broadcasting
+    M_c=M_c+torch.zeros(img.shape).cuda()  ##broadcasting
     return masked_img,M_c,M_f
+
 
 def compose(label,mask,color_mask,edge,color,noise):
     # check=check>0
@@ -70,6 +79,7 @@ def compose(label,mask,color_mask,edge,color,noise):
     masked_color_strokes=mask*(1-color_mask)*color
     masked_noise=mask*noise
     return masked_label,masked_edge,masked_color_strokes,masked_noise
+
 
 def changearm(old_label):
     label=old_label
@@ -81,17 +91,18 @@ def changearm(old_label):
     label=label*(1-noise)+noise*4
     return label
 
-os.makedirs('sample',exist_ok=True)
+
+os.makedirs('sample', exist_ok=True)
 opt = TrainOptions().parse()
 iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
 
 if opt.continue_train:
     try:
-        start_epoch, epoch_iter = np.loadtxt(iter_path , delimiter=',', dtype=int)
+        start_epoch, epoch_iter = np.loadtxt(iter_path, delimiter=',', dtype=int)
     except:
         start_epoch, epoch_iter = 1, 0
-    print('Resuming from epoch %d at iteration %d' % (start_epoch, epoch_iter))        
-else:    
+    print('Resuming from epoch %d at iteration %d' % (start_epoch, epoch_iter))
+else:
     start_epoch, epoch_iter = 1, 0
 
 if opt.debug:
@@ -134,23 +145,30 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         save_fake = True
 
         ##add gaussian noise channel && wash the label
-        t_mask=torch.FloatTensor((data['label'].cpu().numpy()==7).astype(np.float))
-        data['label']=data['label']*(1-t_mask)+t_mask*4
-        mask_clothes=torch.FloatTensor((data['label'].cpu().numpy()==4).astype(np.int))
-        mask_fore=torch.FloatTensor((data['label'].cpu().numpy()>0).astype(np.int))
-        img_fore=data['image']*mask_fore
-        img_fore_wc=img_fore*mask_fore
-        all_clothes_label=changearm(data['label'])
+        t_mask = torch.FloatTensor((data['label'].cpu().numpy() == 7).astype(np.float))
+        data['label'] = data['label']*(1-t_mask)+t_mask*4
+        mask_clothes = torch.FloatTensor((data['label'].cpu().numpy() == 4).astype(np.int))
+        mask_fore = torch.FloatTensor((data['label'].cpu().numpy() > 0).astype(np.int))
+        img_fore = data['image']*mask_fore
+        img_fore_wc = img_fore*mask_fore
+        all_clothes_label = changearm(data['label'])
         ############## Forward Pass ######################
-        losses, fake_image, real_image,input_label,L1_loss,style_loss,clothes_mask,warped,refined,CE_loss,rx,ry,cx,cy,rg,cg= model(Variable(data['label'].cuda()),Variable(data['edge'].cuda()),Variable(img_fore.cuda()),Variable(mask_clothes.cuda()),Variable(data['color'].cuda()),Variable(all_clothes_label.cuda()),Variable(data['image'].cuda()),Variable(data['pose'].cuda()),Variable(data['mask'].cuda())  )
+        losses, fake_image, real_image, input_label, L1_loss, style_loss, \
+            clothes_mask, warped, refined, CE_loss, \
+             rx, ry, cx, cy, rg, cg = model(Variable(data['label'].cuda()), Variable(data['edge'].cuda()),
+                                            Variable(img_fore.cuda()), Variable(mask_clothes.cuda()),
+                                            Variable(data['color'].cuda()), Variable(all_clothes_label.cuda()),
+                                            Variable(data['image'].cuda()), Variable(data['pose'].cuda()),
+                                            Variable(data['mask'].cuda()))
 
         # sum per device losses
-        losses = [ torch.mean(x) if not isinstance(x, int) else x for x in losses ]
+        losses = [torch.mean(x) if not isinstance(x, int) else x for x in losses]
         loss_dict = dict(zip(model.module.loss_names, losses))
 
         # calculate final loss scalar
         loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5
-        loss_G = loss_dict['G_GAN']+loss_dict.get('G_GAN_Feat',0)+loss_dict.get('G_VGG',0)+torch.mean(L1_loss+CE_loss+rx+ry+cx+cy+rg+cg)
+        loss_G = loss_dict['G_GAN']+loss_dict.get('G_GAN_Feat', 0)+ \
+            loss_dict.get('G_VGG', 0)+torch.mean(L1_loss+CE_loss+rx+ry+cx+cy+rg+cg)
 
         writer.add_scalar('loss_d', loss_D, step)
         writer.add_scalar('loss_g', loss_G, step)
@@ -164,7 +182,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         writer.add_scalar('loss_g_gan', loss_dict['G_GAN'], step)
         writer.add_scalar('loss_g_gan_feat', loss_dict['G_GAN_Feat'], step)
         writer.add_scalar('loss_g_vgg', loss_dict['G_VGG'], step)
-  
+
         ############### Backward Pass ####################
         # update generator weights
         model.module.optimizer_G.zero_grad()
@@ -178,21 +196,20 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         ############## Display results and errors ##########
 
-        
         ### display output images
         if step % 100 == 0:
             a = generate_label_color(generate_label_plain(input_label)).float().cuda()
             b = real_image.float().cuda()
             c = fake_image.float().cuda()
-            d=torch.cat([clothes_mask,clothes_mask,clothes_mask],1)
-            e=warped
-            f=refined
-            combine = torch.cat([a[0],b[0],c[0],d[0],e[0],f[0]], 2).squeeze()
-            cv_img=(combine.permute(1,2,0).detach().cpu().numpy()+1)/2
+            d = torch.cat([clothes_mask, clothes_mask, clothes_mask], 1)
+            e = warped
+            f = refined
+            combine = torch.cat([a[0], b[0], c[0], d[0], e[0], f[0]], 2).squeeze()
+            cv_img = (combine.permute(1, 2, 0).detach().cpu().numpy()+1)/2
             writer.add_image('combine', (combine.data + 1) / 2.0, step)
-            rgb=(cv_img*255).astype(np.uint8)
-            bgr=cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR)
-            cv2.imwrite('sample/test'+str(step)+'.jpg',bgr)
+            rgb = (cv_img*255).astype(np.uint8)
+            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            cv2.imwrite('sample/test'+str(step)+'.jpg', bgr)
 
         step += 1
         iter_end_time = time.time()
@@ -213,15 +230,15 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         if epoch_iter >= dataset_size:
             break
-       
-    # end of epoch 
+
+    # end of epoch
     iter_end_time = time.time()
     print('End of epoch %d / %d \t Time Taken: %d sec' %
           (epoch, opt.niter + opt.niter_decay, time.time() - epoch_start_time))
 
     ### save model for this epoch
     if epoch % opt.save_epoch_freq == 0:
-        print('saving the model at the end of epoch %d, iters %d' % (epoch, total_steps))        
+        print('saving the model at the end of epoch %d, iters %d' % (epoch, total_steps))
         model.module.save('latest')
         model.module.save(epoch)
         np.savetxt(iter_path, (epoch + 1, 0), delimiter=',', fmt='%d')
