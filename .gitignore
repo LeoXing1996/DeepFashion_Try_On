@@ -10,3 +10,6 @@ Data_preprocessing/
 */*/__pycache__/
 */checkpoints/
 */runs/
+
+*/models/*.pth
+*/sample/*
