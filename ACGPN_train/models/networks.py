@@ -8,15 +8,11 @@ from torch.autograd import Variable
 import numpy as np
 import torch.nn.functional as F
 import math
-import torch
 import itertools
-import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
 from grid_sample import grid_sample
-from torch.autograd import Variable
 from tps_grid_gen import TPSGridGen
 import ipdb
+
 
 ###############################################################################
 # Functions
@@ -50,7 +46,7 @@ def define_G(input_nc, output_nc, ngf, netG, L=1, S=1, n_downsample_global=3, n_
                              n_local_enhancers, n_blocks_local, norm_layer)
     else:
         raise ('generator not implemented!')
-    print(netG)
+    # print(netG)
     if len(gpu_ids) > 0:
         assert (torch.cuda.is_available())
         netG.cuda(gpu_ids[0])
@@ -71,6 +67,7 @@ def define_UnetMask(input_nc, gpu_ids=[]):
     netG.apply(weights_init)
     return netG
 
+
 def define_Refine(input_nc, output_nc, gpu_ids=[]):
     netG = Refine(input_nc, output_nc)
     netG.cuda(gpu_ids[0])
@@ -81,7 +78,7 @@ def define_Refine(input_nc, output_nc, gpu_ids=[]):
 def define_D(input_nc, ndf, n_layers_D, norm='instance', use_sigmoid=False, num_D=1, getIntermFeat=False, gpu_ids=[]):
     norm_layer = get_norm_layer(norm_type=norm)
     netD = MultiscaleDiscriminator(input_nc, ndf, n_layers_D, norm_layer, use_sigmoid, num_D, getIntermFeat)
-    print(netD)
+    # print(netD)
     if len(gpu_ids) > 0:
         assert (torch.cuda.is_available())
         netD.cuda(gpu_ids[0])
@@ -461,6 +458,8 @@ class AttentionNorm(nn.Module):
         attended = self.conv(attended)
         output = attended + unattended
         return output
+
+
 class UnetMask(nn.Module):
     def __init__(self, input_nc, output_nc=3):
         super(UnetMask, self).__init__()
@@ -516,7 +515,11 @@ class UnetMask(nn.Module):
                                      ])
 
     def forward(self, input, refer, mask):
-        input, warped_mask,rx,ry,cx,cy,rg,cg = self.stn(input, torch.cat([mask, refer, input], 1), mask)
+        # input: clothes
+        # refer: clothes_mask
+        # mask:  pre_clothes_mask
+        input, warped_mask, rx, ry, cx, cy, rg, cg = \
+            self.stn(input, torch.cat([mask, refer, input], 1), mask)
         #ipdb.set_trace()# print(input.shape)
 
         conv1 = self.conv1(torch.cat([refer.detach(), input.detach()], 1))
@@ -546,7 +549,8 @@ class UnetMask(nn.Module):
 
         up9 = self.up9(conv8)
         conv9 = self.conv9(torch.cat([conv1, up9], 1))
-        return conv9, input, warped_mask,rx,ry,cx,cy,rg,cg
+        return conv9, input, warped_mask, rx, ry, cx, cy, rg, cg
+
 
 class Unet(nn.Module):
     def __init__(self, input_nc, output_nc=3):
@@ -1474,6 +1478,7 @@ class CNN(nn.Module):
         self.model = nn.Sequential(*model)
         self.fc1 = nn.Linear(512, 128)
         self.fc2 = nn.Linear(128, num_output)
+
     def forward(self, x):
         x = self.model(x)
         x = self.maxpool(x)
@@ -1510,47 +1515,46 @@ class BoundedGridLocNet(nn.Module):
         batch_size = x.size(0)
         points = F.tanh(self.cnn(x))
         #ipdb.set_trace()
-        coor=points.view(batch_size, -1, 2)
-        row=self.get_row(coor,5)
-        col=self.get_col(coor,5)
+        coor = points.view(batch_size, -1, 2)
+        row = self.get_row(coor, 5)
+        col = self.get_col(coor, 5)
         rg_loss = sum(self.grad_row(coor, 5))
         cg_loss = sum(self.grad_col(coor, 5))
-        rg_loss = torch.max(rg_loss,torch.tensor(0.02).cuda())
-        cg_loss = torch.max(cg_loss,torch.tensor(0.02).cuda())
-        rx,ry,cx,cy=torch.tensor(0.08).cuda(),torch.tensor(0.08).cuda()\
-            ,torch.tensor(0.08).cuda(),torch.tensor(0.08).cuda()
-        row_x,row_y=row[:,:,0],row[:,:,1]
-        col_x,col_y=col[:,:,0],col[:,:,1]
-        rx_loss=torch.max(rx,row_x).mean()
-        ry_loss=torch.max(ry,row_y).mean()
-        cx_loss=torch.max(cx,col_x).mean()
-        cy_loss=torch.max(cy,col_y).mean()
+        rg_loss = torch.max(rg_loss, torch.tensor(0.02).cuda())
+        cg_loss = torch.max(cg_loss, torch.tensor(0.02).cuda())
+        rx, ry, cx, cy = torch.tensor(0.08).cuda(), torch.tensor(0.08).cuda(), \
+            torch.tensor(0.08).cuda(), torch.tensor(0.08).cuda()
+        row_x, row_y = row[:, :, 0], row[:, :, 1]
+        col_x, col_y = col[:, :, 0], col[:, :, 1]
+        rx_loss = torch.max(rx, row_x).mean()
+        ry_loss = torch.max(ry, row_y).mean()
+        cx_loss = torch.max(cx, col_x).mean()
+        cy_loss = torch.max(cy, col_y).mean()
 
+        return coor, rx_loss, ry_loss, cx_loss, cy_loss, rg_loss, cg_loss
 
-        return  coor,rx_loss,ry_loss,cx_loss,cy_loss,rg_loss,cg_loss
-
-    def get_row(self,coor,num):
-        sec_dic=[]
+    def get_row(self, coor, num):
+        sec_dic = []
         for j in range(num):
-            sum=0
-            buffer=0
-            flag=False
-            max=-1
+            sum = 0
+            buffer = 0
+            flag = False
+            max = -1
             for i in range(num-1):
-                differ=(coor[:,j*num+i+1,:]-coor[:,j*num+i,:])**2
+                differ = (coor[:, j*num+i+1, :]-coor[:, j*num+i, :])**2
                 if not flag:
-                    second_dif=0
-                    flag=True
+                    second_dif = 0
+                    flag = True
                 else:
-                    second_dif=torch.abs(differ-buffer)
+                    second_dif = torch.abs(differ-buffer)
                     sec_dic.append(second_dif)
 
-                buffer=differ
-                sum+=second_dif
-        return torch.stack(sec_dic,dim=1)
+                buffer = differ
+                sum += second_dif
+        return torch.stack(sec_dic, dim=1)
 
-    def get_col(self,coor,num):
-        sec_dic=[]
+    def get_col(self, coor, num):
+        sec_dic = []
         for i in range(num):
             sum = 0
             buffer = 0
@@ -1566,7 +1570,7 @@ class BoundedGridLocNet(nn.Module):
                     sec_dic.append(second_dif)
                 buffer = differ
                 sum += second_dif
-        return torch.stack(sec_dic,dim=1)
+        return torch.stack(sec_dic, dim=1)
 
     def grad_row(self, coor, num):
         sec_term = []
@@ -1651,7 +1655,8 @@ class STNNet(nn.Module):
                 buffer = differ
                 sum += second_dif
             print(sum / num)
-    def get_col(self,coor,num):
+
+    def get_col(self, coor, num):
         for i in range(num):
             sum = 0
             buffer = 0
@@ -1668,14 +1673,15 @@ class STNNet(nn.Module):
                 buffer = differ
                 sum += second_dif
             print(sum)
+
     def forward(self, x, reference, mask):
         batch_size = x.size(0)
-        source_control_points,rx,ry,cx,cy,rg,cg = self.loc_net(reference)
-        source_control_points=(source_control_points)
+        source_control_points, rx, ry, cx, cy, rg, cg = self.loc_net(reference)
+        source_control_points = (source_control_points)
         # print('control points',source_control_points.shape)
         source_coordinate = self.tps(source_control_points)
         grid = source_coordinate.view(batch_size, 256, 192, 2)
         # print('grid size',grid.shape)
         transformed_x = grid_sample(x, grid, canvas=0)
         warped_mask = grid_sample(mask, grid, canvas=0)
-        return transformed_x, warped_mask,rx,ry,cx,cy,rg,cg
+        return transformed_x, warped_mask, rx, ry, cx, cy, rg, cg

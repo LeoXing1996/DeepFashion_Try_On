@@ -105,12 +105,12 @@ class Pix2PixHDModel(BaseModel):
         if opt.resize_or_crop != 'none' or not opt.isTrain:  # when training at full res this causes OOM
             torch.backends.cudnn.benchmark = True
         self.isTrain = opt.isTrain
-        input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
+        # input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
         self.count = 0
         self.perm = torch.randperm(1024*4)
         ##### define networks
         # Generator network
-        netG_input_nc = input_nc
+        # netG_input_nc = input_nc
 
         # Main Generator
         # with torch.no_grad():
@@ -192,8 +192,9 @@ class Pix2PixHDModel(BaseModel):
                 self.load_network(self.D1, 'D1', opt.which_epoch, pretrained_path)
                 self.load_network(self.D2, 'D2', opt.which_epoch, pretrained_path)
                 self.load_network(self.D3, 'D3', opt.which_epoch, pretrained_path)
-                #self.load_network(self.optimizer_G, 'OG', opt.which_epoch, pretrained_path)
-                #self.load_network(self.optimizer_D, 'OD', opt.which_epoch, pretrained_path)
+                # seems should load optimizer too ?
+                self.load_network(self.optimizer_G, 'OG', opt.which_epoch, pretrained_path)
+                self.load_network(self.optimizer_D, 'OD', opt.which_epoch, pretrained_path)
 
             # optimizer G + B
             #params = list(self.netG.parameters()) + list(self.netB.parameters())
@@ -255,18 +256,26 @@ class Pix2PixHDModel(BaseModel):
         return noise.cuda()
     #data['label'],data['edge'],img_fore.cuda()),Variable(mask_clothes, ,Variable(data['color'].cuda()),Variable(all_clothes_label.cuda()))
 
-    def forward(self, label, pre_clothes_mask, img_fore, clothes_mask, clothes, all_clothes_label, real_image, pose, mask):
-        # Encode Inputs
-        #ipdb.set_trace()
+    def forward(self, label, pre_clothes_mask,
+                img_fore, clothes_mask,
+                clothes, all_clothes_label,
+                real_image, pose, mask):
+        # Some input:
+        # img_fore -> foreground of `real_images`
+        # clothes_mask -> target (part of `label` == 4 or cloth in real image)
+        # pre_clothes_mask -> source (`edge` or cloth mask without warping)
+        # mask -> ??? TODO
+
+        # Encode Inputs --> change mask to one-hot label
+        #   input_label: real_image mask with all part
+        #   masked_label: mask w/o cloth part (M_W^S)
+        #   all_clothes_label: combine `arm` and `cloth` as `cloth` label, fused map in paper (M^F)
         input_label, masked_label, all_clothes_label = self.encode_input(label, clothes_mask, all_clothes_label)
-        #ipdb.set_trace()
+
         arm1_mask = torch.FloatTensor((label.cpu().numpy() == 11).astype(np.float)).cuda()
         arm2_mask = torch.FloatTensor((label.cpu().numpy() == 13).astype(np.float)).cuda()
         pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
         clothes = clothes*pre_clothes_mask
-
-        #clothes_mask -> target
-        #pre_clothes_mask -> source
 
         # fake_image,warped,warped_mask=self.Unet(clothes,clothes_mask,pre_clothes_mask)
         # real_image=real_image * clothes_mask+(1-clothes_mask)*-1
@@ -301,8 +310,12 @@ class Pix2PixHDModel(BaseModel):
         ## construct full label map
         armlabel_map = armlabel_map*(1-fake_cl_dis)+fake_cl_dis*4
 
-        fake_c, warped, warped_mask, rx, ry, cx, cy, rg, cg = self.Unet(clothes, clothes_mask, pre_clothes_mask)
+        fake_c, warped, warped_mask, rx, ry, cx, cy, rg, cg = \
+            self.Unet(clothes, clothes_mask, pre_clothes_mask)
         #ipdb.set_trace()
+        # fake_c --> 4 channel
+        # tanh(0~2) : T_c^R  (refined cloth in Eq 6)
+        # sigmoid(3): \alpha (mask in Eq 6)
         composition_mask = fake_c[:, 3, :, :]
         fake_c = fake_c[:, 0:3, :, :]
         fake_c = self.tanh(fake_c)
@@ -311,7 +324,9 @@ class Pix2PixHDModel(BaseModel):
         skin_color = self.ger_average_color((arm1_mask+arm2_mask-arm2_mask*arm1_mask),
                                             (arm1_mask+arm2_mask-arm2_mask*arm1_mask)*real_image)
 
-        img_hole_hand = img_fore*(1-clothes_mask)*(1-arm1_mask)*(1-arm2_mask)+img_fore*arm1_mask*(1-mask)+img_fore*arm2_mask*(1-mask)
+        # img_hole_hand --> gt of `I_W` in Eq 9
+        img_hole_hand = img_fore*(1-clothes_mask)*(1-arm1_mask)*(1-arm2_mask) + \
+            img_fore*arm1_mask*(1-mask) + img_fore*arm2_mask*(1-mask)
 
         G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask, skin_color, self.gen_noise(shape)], 1)
         fake_image = self.G.refine(G_in.detach())
@@ -357,12 +372,14 @@ class Pix2PixHDModel(BaseModel):
 
         # VGG feature matching loss
         loss_G_VGG = 0
-        loss_G_VGG += self.criterionVGG.warp(warped, real_image*clothes_mask) + self.criterionVGG.warp(comp_fake_c, real_image*clothes_mask) * 10
+        loss_G_VGG += self.criterionVGG.warp(warped, real_image*clothes_mask) + \
+            self.criterionVGG.warp(comp_fake_c, real_image*clothes_mask) * 10
         loss_G_VGG += self.criterionVGG.warp(fake_c, real_image*clothes_mask) * 20
 
         # L1_loss=self.criterionFeat(fake_image , real_image )
         #
-        L1_loss = self.criterionFeat(warped_mask, clothes_mask)+self.criterionFeat(warped, real_image*clothes_mask)
+        L1_loss = self.criterionFeat(warped_mask, clothes_mask) + \
+            self.criterionFeat(warped, real_image*clothes_mask)  # L4
         L1_loss += self.criterionFeat(fake_c, real_image*clothes_mask)*0.2
         L1_loss += self.criterionFeat(comp_fake_c, real_image*clothes_mask)*10
         L1_loss += self.criterionFeat(composition_mask, clothes_mask)

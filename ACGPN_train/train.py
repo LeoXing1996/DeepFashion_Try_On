@@ -151,7 +151,7 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         mask_fore = torch.FloatTensor((data['label'].cpu().numpy() > 0).astype(np.int))
         img_fore = data['image']*mask_fore
         img_fore_wc = img_fore*mask_fore
-        all_clothes_label = changearm(data['label'])
+        all_clothes_label = changearm(data['label'])  # fused map in paper ?
         ############## Forward Pass ######################
         losses, fake_image, real_image, input_label, L1_loss, style_loss, \
             clothes_mask, warped, refined, CE_loss, \

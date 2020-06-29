@@ -4,6 +4,7 @@ import os
 import torch
 import sys
 
+
 class BaseModel(torch.nn.Module):
     def name(self):
         return 'BaseModel'
@@ -51,7 +52,7 @@ class BaseModel(torch.nn.Module):
     # helper loading function that can be used by subclasses
     def load_network(self, network, network_label, epoch_label, save_dir=''):
         save_filename = '%s_net_%s.pth' % (epoch_label, network_label)
-        print (save_filename)
+        print(save_filename)
         if not save_dir:
             save_dir = self.save_dir
         save_path = os.path.join(save_dir, save_filename)

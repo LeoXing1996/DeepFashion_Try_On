@@ -36,38 +36,41 @@ def generate_discrete_label(inputs, label_nc, onehot=True, encode=True):
     input_label = input_label.scatter_(1, label_map.data.long().cuda(), 1.0)
 
     return input_label
-def morpho(mask,iter,bigger=True):
+
+
+def morpho(mask, iter, bigger=True):
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    new=[]
+    new = []
     for i in range(len(mask)):
-        tem=mask[i].cpu().detach().numpy().squeeze().reshape(256,192,1)*255
-        tem=tem.astype(np.uint8)
+        tem = mask[i].cpu().detach().numpy().squeeze().reshape(256, 192, 1)*255
+        tem = tem.astype(np.uint8)
         if bigger:
-            tem=cv2.dilate(tem,kernel,iterations=iter)
+            tem = cv2.dilate(tem, kernel, iterations=iter)
         else:
-            tem=cv2.erode(tem,kernel,iterations=iter)
-        tem=tem.astype(np.float64)
-        tem=tem.reshape(1,256,192)
+            tem = cv2.erode(tem, kernel, iterations=iter)
+        tem = tem.astype(np.float64)
+        tem = tem.reshape(1, 256, 192)
         new.append(tem.astype(np.float64)/255.0)
-    new=np.stack(new)
-    new=torch.FloatTensor(new).cuda()
+    new = np.stack(new)
+    new = torch.FloatTensor(new).cuda()
     return new
 
-def morpho_smaller(mask,iter,bigger=True):
+
+def morpho_smaller(mask, iter, bigger=True):
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1))
-    new=[]
+    new = []
     for i in range(len(mask)):
-        tem=mask[i].cpu().detach().numpy().squeeze().reshape(256,192,1)*255
-        tem=tem.astype(np.uint8)
+        tem = mask[i].cpu().detach().numpy().squeeze().reshape(256, 192, 1)*255
+        tem = tem.astype(np.uint8)
         if bigger:
-            tem=cv2.dilate(tem,kernel,iterations=iter)
+            tem = cv2.dilate(tem, kernel, iterations=iter)
         else:
-            tem=cv2.erode(tem,kernel,iterations=iter)
-        tem=tem.astype(np.float64)
-        tem=tem.reshape(1,256,192)
+            tem = cv2.erode(tem, kernel, iterations=iter)
+        tem = tem.astype(np.float64)
+        tem = tem.reshape(1, 256, 192)
         new.append(tem.astype(np.float64)/255.0)
-    new=np.stack(new)
-    new=torch.FloatTensor(new).cuda()
+    new = np.stack(new)
+    new = torch.FloatTensor(new).cuda()
     return new
 
 
@@ -137,11 +140,11 @@ class Pix2PixHDModel(BaseModel):
         if opt.resize_or_crop != 'none' or not opt.isTrain:  # when training at full res this causes OOM
             torch.backends.cudnn.benchmark = True
         self.isTrain = opt.isTrain
-        input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
+        # input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
         self.count = 0
         ##### define networks
         # Generator network
-        netG_input_nc = input_nc
+        # netG_input_nc = input_nc
         # Main Generator
         with torch.no_grad():
             self.Unet = networks.define_UnetMask(4, self.gpu_ids).eval()
@@ -154,15 +157,15 @@ class Pix2PixHDModel(BaseModel):
         self.BCE = torch.nn.BCEWithLogitsLoss()
 
         # Discriminator network
-        if self.isTrain:
-            use_sigmoid = opt.no_lsgan
-            netD_input_nc = input_nc + opt.output_nc
-            netB_input_nc = opt.output_nc * 2
-            # self.D1 = self.get_D(17, opt)
-            # self.D2 = self.get_D(4, opt)
-            # self.D3=self.get_D(7+3,opt)
-            # self.D = self.get_D(20, opt)
-            # self.netB = networks.define_B(netB_input_nc, opt.output_nc, 32, 3, 3, opt.norm, gpu_ids=self.gpu_ids)
+        # if self.isTrain:
+        #     use_sigmoid = opt.no_lsgan
+        #     netD_input_nc = input_nc + opt.output_nc
+        #     netB_input_nc = opt.output_nc * 2
+        #     self.D1 = self.get_D(17, opt)
+        #     self.D2 = self.get_D(4, opt)
+        #     self.D3=self.get_D(7+3,opt)
+        #     self.D = self.get_D(20, opt)
+        #     self.netB = networks.define_B(netB_input_nc, opt.output_nc, 32, 3, 3, opt.norm, gpu_ids=self.gpu_ids)
 
         if self.opt.verbose:
             print('---------- Networks initialized -------------')
@@ -210,8 +213,6 @@ class Pix2PixHDModel(BaseModel):
                 print(
                     '------------- Only training the local enhancer ork (for %d epochs) ------------' % opt.niter_fix_global)
                 print('The layers that are finetuned are ', sorted(finetune_list))
-
-
 
     def encode_input(self, label_map, clothes_mask, all_clothes_label):
 
@@ -268,24 +269,30 @@ class Pix2PixHDModel(BaseModel):
         noise = np.asarray(noise / 255, dtype=np.uint8)
         noise = torch.tensor(noise, dtype=torch.float32)
         return noise.cuda()
-    def multi_scale_blend(self,fake_img,fake_c,mask,number=4):
-        alpha=[0,0.1,0.3,0.6,0.9]
-        smaller=mask
-        out=0
-        for i in range(1,number+1):
-            bigger=smaller
-            smaller=morpho(smaller,2,False)
-            mid=bigger-smaller
-            out+=mid*(alpha[i]*fake_c+(1-alpha[i])*fake_img)
-        out+=smaller*fake_c
-        out+=(1-mask)*fake_img
+
+    def multi_scale_blend(self, fake_img, fake_c, mask, number=4):
+        alpha = [0, 0.1, 0.3, 0.6, 0.9]
+        smaller = mask
+        out = 0
+        for i in range(1, number+1):
+            bigger = smaller
+            smaller = morpho(smaller, 2, False)
+            mid = bigger-smaller
+            out += mid*(alpha[i]*fake_c+(1-alpha[i])*fake_img)
+        out += smaller*fake_c
+        out += (1-mask)*fake_img
         return out
-    def forward(self, label, pre_clothes_mask, img_fore, clothes_mask, clothes, all_clothes_label, real_image, pose,grid,mask_fore):
+
+    def forward(self, label, pre_clothes_mask,
+                img_fore, clothes_mask,
+                clothes, all_clothes_label,
+                real_image, pose,
+                grid, mask_fore):
         # Encode Inputs
         input_label, masked_label, all_clothes_label = self.encode_input(label, clothes_mask, all_clothes_label)
         arm1_mask = torch.FloatTensor((label.cpu().numpy() == 11).astype(np.float)).cuda()
         arm2_mask = torch.FloatTensor((label.cpu().numpy() == 13).astype(np.float)).cuda()
-        pre_clothes_mask=torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+        pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
         clothes = clothes * pre_clothes_mask
 
         shape = pre_clothes_mask.shape
@@ -298,40 +305,43 @@ class Pix2PixHDModel(BaseModel):
 
         armlabel_map = generate_discrete_label(arm_label.detach(), 14, False)
         dis_label = generate_discrete_label(arm_label.detach(), 14)
-        G2_in = torch.cat([pre_clothes_mask, clothes, dis_label,pose,self.gen_noise(shape)], 1)
+        G2_in = torch.cat([pre_clothes_mask, clothes, dis_label, pose, self.gen_noise(shape)], 1)
         fake_cl = self.G2.refine(G2_in)
         fake_cl = self.sigmoid(fake_cl)
         CE_loss += self.BCE(fake_cl, clothes_mask) * 10
 
         fake_cl_dis = torch.FloatTensor((fake_cl.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
-        fake_cl_dis=morpho(fake_cl_dis,1,True)
+        fake_cl_dis = morpho(fake_cl_dis, 1, True)
 
         new_arm1_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 11).astype(np.float)).cuda()
         new_arm2_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 13).astype(np.float)).cuda()
-        fake_cl_dis=fake_cl_dis*(1- new_arm1_mask)*(1-new_arm2_mask)
-        fake_cl_dis*=mask_fore
+        fake_cl_dis = fake_cl_dis*(1 - new_arm1_mask)*(1 - new_arm2_mask)
+        fake_cl_dis *= mask_fore
 
         arm1_occ = clothes_mask * new_arm1_mask
         arm2_occ = clothes_mask * new_arm2_mask
-        bigger_arm1_occ=morpho(arm1_occ,10)
-        bigger_arm2_occ=morpho(arm2_occ,10  )
+        bigger_arm1_occ = morpho(arm1_occ, 10)
+        bigger_arm2_occ = morpho(arm2_occ, 10)
         arm1_full = arm1_occ + (1 - clothes_mask) * arm1_mask
         arm2_full = arm2_occ + (1 - clothes_mask) * arm2_mask
         armlabel_map *= (1 - new_arm1_mask)
         armlabel_map *= (1 - new_arm2_mask)
         armlabel_map = armlabel_map * (1 - arm1_full) + arm1_full * 11
         armlabel_map = armlabel_map * (1 - arm2_full) + arm2_full * 13
-        armlabel_map*=(1-fake_cl_dis)
-        dis_label=encode(armlabel_map,armlabel_map.shape)
+        armlabel_map *= (1-fake_cl_dis)
+        dis_label = encode(armlabel_map, armlabel_map.shape)
 
-        fake_c, warped, warped_mask,warped_grid= self.Unet(clothes, fake_cl_dis, pre_clothes_mask,grid)
-        mask=fake_c[:,3,:,:]
-        mask=self.sigmoid(mask)*fake_cl_dis
-        fake_c = self.tanh(fake_c[:,0:3,:,:])
-        fake_c=fake_c*(1-mask)+mask*warped
+        fake_c, warped, warped_mask, warped_grid = \
+            self.Unet(clothes, fake_cl_dis, pre_clothes_mask, grid)
+
+        mask = fake_c[:, 3, :, :]
+        mask = self.sigmoid(mask)*fake_cl_dis
+        fake_c = self.tanh(fake_c[:, 0:3, :, :])
+        fake_c = fake_c*(1-mask)+mask*warped
         skin_color = self.ger_average_color((arm1_mask + arm2_mask - arm2_mask * arm1_mask),
                                             (arm1_mask + arm2_mask - arm2_mask * arm1_mask) * real_image)
-        occlude = (1 - bigger_arm1_occ * (arm2_mask + arm1_mask+clothes_mask)) * (1 - bigger_arm2_occ * (arm2_mask + arm1_mask+clothes_mask))
+        occlude = (1 - bigger_arm1_occ * (arm2_mask + arm1_mask + clothes_mask)) * \
+            (1 - bigger_arm2_occ * (arm2_mask + arm1_mask + clothes_mask))
         img_hole_hand = img_fore * (1 - clothes_mask) * occlude * (1 - fake_cl_dis)
 
         G_in = torch.cat([img_hole_hand, dis_label, fake_c, skin_color, self.gen_noise(shape)], 1)
@@ -343,13 +353,13 @@ class Pix2PixHDModel(BaseModel):
         loss_G_GAN = 0
         loss_G_VGG = 0
 
-        L1_loss =0
+        L1_loss = 0
 
         style_loss = L1_loss
 
-        return [self.loss_filter(loss_G_GAN, 0, loss_G_VGG, loss_D_real, loss_D_fake), fake_image,
-                clothes, arm_label
-            , L1_loss, style_loss, fake_cl, CE_loss,real_image,warped_grid]
+        return [self.loss_filter(loss_G_GAN, 0, loss_G_VGG, loss_D_real, loss_D_fake),
+                fake_image, clothes, arm_label,
+                L1_loss, style_loss, fake_cl, CE_loss, real_image, warped_grid]
 
     def inference(self, label, label_ref, image_ref):
 
@@ -405,4 +415,3 @@ class InferenceModel(Pix2PixHDModel):
     def forward(self, inp):
         label = inp
         return self.inference(label)
-
