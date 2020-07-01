@@ -9,6 +9,8 @@ import cv2
 from .base_model import BaseModel
 from . import networks
 import torch.nn.functional as F
+from util.debug import save_rgb_tensor, save_lab_tensor
+from util.debug import save_diff_tensor
 
 NC = 20
 
@@ -287,8 +289,10 @@ class Pix2PixHDModel(BaseModel):
                 img_fore, clothes_mask,
                 clothes, all_clothes_label,
                 real_image, pose,
-                grid, mask_fore):
+                grid, mask_fore, name):
         # Encode Inputs
+        # import ipdb
+        # ipdb.set_trace()
         input_label, masked_label, all_clothes_label = self.encode_input(label, clothes_mask, all_clothes_label)
         arm1_mask = torch.FloatTensor((label.cpu().numpy() == 11).astype(np.float)).cuda()
         arm2_mask = torch.FloatTensor((label.cpu().numpy() == 13).astype(np.float)).cuda()
@@ -301,17 +305,27 @@ class Pix2PixHDModel(BaseModel):
         arm_label = self.G1.refine(G1_in)
 
         arm_label = self.sigmoid(arm_label)
-        CE_loss = self.cross_entropy2d(arm_label, (label * (1 - clothes_mask)).transpose(0, 1)[0].long()) * 10
+        # CE_loss = self.cross_entropy2d(arm_label, (label * (1 - clothes_mask)).transpose(0, 1)[0].long()) * 10
 
         armlabel_map = generate_discrete_label(arm_label.detach(), 14, False)
         dis_label = generate_discrete_label(arm_label.detach(), 14)
+
+        # TODO: here we can compare `armlabel_map` and `label` --> compare result of G1
+        # save_lab_tensor(armlabel_map) and save_lab_tensor(label)
+
         G2_in = torch.cat([pre_clothes_mask, clothes, dis_label, pose, self.gen_noise(shape)], 1)
         fake_cl = self.G2.refine(G2_in)
         fake_cl = self.sigmoid(fake_cl)
-        CE_loss += self.BCE(fake_cl, clothes_mask) * 10
+        # CE_loss += self.BCE(fake_cl, clothes_mask) * 10
 
         fake_cl_dis = torch.FloatTensor((fake_cl.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
         fake_cl_dis = morpho(fake_cl_dis, 1, True)
+
+        # TODO: here we can compare `fake_cl` and `???` --> compare result of G2 / warping
+        # save_rgb_tensor(fake_cl) and save_rgb_tensor
+        save_rgb_tensor(fake_cl, 'clothMask_Warp', name)
+        save_rgb_tensor(label == 4, 'clothMask_GT', name)
+        save_diff_tensor(fake_cl, label == 4, 'clothMask_diff', name)
 
         new_arm1_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 11).astype(np.float)).cuda()
         new_arm2_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 13).astype(np.float)).cuda()
@@ -331,35 +345,36 @@ class Pix2PixHDModel(BaseModel):
         armlabel_map *= (1-fake_cl_dis)
         dis_label = encode(armlabel_map, armlabel_map.shape)
 
+        save_rgb_tensor(clothes, 'cloth_1_before_STN', dir=name)
+
         fake_c, warped, warped_mask, warped_grid = \
             self.Unet(clothes, fake_cl_dis, pre_clothes_mask, grid)
+
+        save_rgb_tensor(warped, 'cloth_2_after_STN', dir=name)
 
         mask = fake_c[:, 3, :, :]
         mask = self.sigmoid(mask)*fake_cl_dis
         fake_c = self.tanh(fake_c[:, 0:3, :, :])
+
+        save_rgb_tensor(fake_c, 'cloth_3_after_refine', dir=name)
+
         fake_c = fake_c*(1-mask)+mask*warped
+
+        save_rgb_tensor(fake_c, 'cloth_4_after_comp', dir=name)
+
         skin_color = self.ger_average_color((arm1_mask + arm2_mask - arm2_mask * arm1_mask),
                                             (arm1_mask + arm2_mask - arm2_mask * arm1_mask) * real_image)
         occlude = (1 - bigger_arm1_occ * (arm2_mask + arm1_mask + clothes_mask)) * \
             (1 - bigger_arm2_occ * (arm2_mask + arm1_mask + clothes_mask))
         img_hole_hand = img_fore * (1 - clothes_mask) * occlude * (1 - fake_cl_dis)
-
+        # here we change `fake_c` --> `real_image*clothes_mask`
         G_in = torch.cat([img_hole_hand, dis_label, fake_c, skin_color, self.gen_noise(shape)], 1)
         fake_image = self.G.refine(G_in.detach())
         fake_image = self.tanh(fake_image)
 
-        loss_D_fake = 0
-        loss_D_real = 0
-        loss_G_GAN = 0
-        loss_G_VGG = 0
-
-        L1_loss = 0
-
-        style_loss = L1_loss
-
-        return [self.loss_filter(loss_G_GAN, 0, loss_G_VGG, loss_D_real, loss_D_fake),
-                fake_image, clothes, arm_label,
-                L1_loss, style_loss, fake_cl, CE_loss, real_image, warped_grid]
+        return [fake_image, real_image,
+                clothes, real_image*clothes_mask, fake_c,
+                arm_label, fake_cl]
 
     def inference(self, label, label_ref, image_ref):
 

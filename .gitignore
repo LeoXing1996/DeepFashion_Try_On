@@ -13,3 +13,4 @@ Data_preprocessing/
 
 */models/*.pth
 */sample/*
+ACGPN_inference/debug_img/

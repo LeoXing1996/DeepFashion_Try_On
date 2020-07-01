@@ -82,13 +82,11 @@ opt = TrainOptions().parse()
 save_dir = os.path.join('sample', opt.name)
 img_dir = os.path.join(save_dir, 'img')
 summ_dir = os.path.join(save_dir, 'logs')
-writer = SummaryWriter(summ_dir)
+debug_dir = os.path.join(save_dir, 'debug')
 
 if not os.path.exists(img_dir):
     os.makedirs(img_dir)
 
-# opt.isTrain = False
-# opt = TestOptions().parse(save=False)
 iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
 if opt.continue_train:
     try:
@@ -105,6 +103,12 @@ if opt.debug:
     opt.niter = 1
     opt.niter_decay = 0
     opt.max_dataset_size = 10
+    opt.nThread = 1
+    # import pdb
+    # pdb.set_trace()
+
+if not os.path.exists('debug_img'):
+    os.makedirs('debug_img')
 
 data_loader = CreateDataLoader(opt)
 dataset = data_loader.load_data()
@@ -120,8 +124,6 @@ print_delta = total_steps % opt.print_freq
 save_delta = total_steps % opt.save_latest_freq
 
 step = 0
-# SSIM_accu = 0  # to log the SSIM
-# SSIM_cal = SSIM()
 
 for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     epoch_start_time = time.time()
@@ -150,90 +152,38 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         ############## Forward Pass ######################
         with torch.no_grad():
-            losses, fake_image, real_cloth, input_label, L1_loss, style_loss, clothes_mask, CE_loss, rgb, alpha = \
+            fake_image, real_image, real_cloth, cloth_gt, cloth_warp, \
+                fake_label, clothes_mask = \
                 model(Variable(data['label'].cuda()), Variable(data['edge'].cuda()),
                       Variable(img_fore.cuda()), Variable(mask_clothes.cuda()),
                       Variable(data['color'].cuda()), Variable(all_clothes_label.cuda()),
                       Variable(data['image'].cuda()), Variable(data['pose'].cuda()),
-                      Variable(data['image'].cuda()), Variable(mask_fore.cuda()))
-
-        # sum per device losses
-        losses = [torch.mean(x) if not isinstance(x, int) else x for x in losses]
-        loss_dict = dict(zip(model.module.loss_names, losses))
-
-        # calculate final loss scalar
-        loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5
-        loss_G = loss_dict['G_GAN']+torch.mean(CE_loss)  #loss_dict.get('G_GAN_Feat',0)+torch.mean(L1_loss)+loss_dict.get('G_VGG',0)
-
-        writer.add_scalar('loss_d', loss_D, step)
-        writer.add_scalar('loss_g', loss_G, step)
-        # writer.add_scalar('loss_L1', torch.mean(L1_loss), step)
-
-        writer.add_scalar('loss_CE', torch.mean(CE_loss), step)
-        # writer.add_scalar('acc', torch.mean(acc)*100, step)
-        # writer.add_scalar('loss_face', torch.mean(face_loss), step)
-        # writer.add_scalar('loss_fore', torch.mean(fore_loss), step)
-        # writer.add_scalar('loss_tv', torch.mean(tv_loss), step)
-        # writer.add_scalar('loss_mask', torch.mean(mask_loss), step)
-        # writer.add_scalar('loss_style', torch.mean(style_loss), step)
-
-        writer.add_scalar('loss_g_gan', loss_dict['G_GAN'], step)
-        # writer.add_scalar('loss_g_gan_feat', loss_dict['G_GAN_Feat'], step)
-        # writer.add_scalar('loss_g_vgg', loss_dict['G_VGG'], step)
-
-        ############### Backward Pass ####################
-        # update generator weights
-        # model.module.optimizer_G.zero_grad()
-        # loss_G.backward()
-        # model.module.optimizer_G.step()
-        #
-        # # update discriminator weights
-        # model.module.optimizer_D.zero_grad()
-        # loss_D.backward()
-        # model.module.optimizer_D.step()
-
-        #call(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"])
+                      Variable(data['image'].cuda()), Variable(mask_fore.cuda()), data['name'])
 
         ############## Display results and errors ##########
 
         ### display output images
-        a = generate_label_color(generate_label_plain(input_label)).float().cuda()
+        a = generate_label_color(generate_label_plain(fake_label)).float().cuda()
         b = real_cloth.float().cuda()
         c = fake_image.float().cuda()
         d = torch.cat([clothes_mask, clothes_mask, clothes_mask], 1)
-        combine = torch.cat([a[0], d[0], b[0], c[0], rgb[0]], 2).squeeze()
+        combine = torch.cat([a[0], d[0], b[0], c[0], real_image[0]], 2).squeeze()
         # combine=c[0].squeeze()
         cv_img = (combine.permute(1, 2, 0).detach().cpu().numpy()+1) / 2
         fake_img_cv = (fake_image[0].permute(1, 2, 0).detach().cpu().numpy() + 1) / 2
         if step % 1 == 0 and not opt.no_img:
-            writer.add_image('combine', (combine.data + 1) / 2.0, step)
-            rgb = (cv_img*255).astype(np.uint8)
+            real_image = (cv_img*255).astype(np.uint8)
             fake_rgb = (fake_img_cv*255).astype(np.uint8)
 
-            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            bgr = cv2.cvtColor(real_image, cv2.COLOR_RGB2BGR)
             fake_bgr = cv2.cvtColor(fake_rgb, cv2.COLOR_RGB2BGR)
             n = str(step)+'.jpg'
-            # cv2.imwrite('sample/'+data['name'][0],bgr)
-
             cv2.imwrite(img_dir + '/combine_' + data['name'][0], bgr)
             cv2.imwrite(img_dir + '/' + data['name'][0], fake_bgr)
-        # ssim_single = SSIM_cal(fake_image, data['image'].cuda())
-        # SSIM_accu += ssim_single
         step += 1
         print(step)
-        ### save latest model
-        if total_steps % opt.save_latest_freq == save_delta:
-            # print('saving the latest model (epoch %d, total_steps %d)' % (epoch, total_steps))
-            # model.module.save('latest')
-            # np.savetxt(iter_path, (epoch, epoch_iter), delimiter=',', fmt='%d')
-            pass
         if epoch_iter >= dataset_size:
             break
-
-    # with open(os.path.join(save_dir, 'SSIM.txt'), 'w') as file:
-    #     print('total step: ', step, 'SSIM_accu: ', SSIM_accu, 'SSIM_avg:', SSIM_accu / step)
-    #     file.write(str(float(SSIM_accu / step)))
-    #     file.write('\n')
 
     # end of epoch
     iter_end_time = time.time()
