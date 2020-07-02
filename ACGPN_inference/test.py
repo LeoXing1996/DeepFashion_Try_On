@@ -79,10 +79,10 @@ def changearm(old_label):
 os.makedirs('sample', exist_ok=True)
 opt = TrainOptions().parse()
 
-save_dir = os.path.join('sample', opt.name)
+save_dir = os.path.join('sample', opt.which_ckpt)
+if opt.name:
+    save_dir = os.path.join(save_dir, opt.name)
 img_dir = os.path.join(save_dir, 'img')
-summ_dir = os.path.join(save_dir, 'logs')
-writer = SummaryWriter(summ_dir)
 
 if not os.path.exists(img_dir):
     os.makedirs(img_dir)
@@ -120,8 +120,6 @@ print_delta = total_steps % opt.print_freq
 save_delta = total_steps % opt.save_latest_freq
 
 step = 0
-# SSIM_accu = 0  # to log the SSIM
-# SSIM_cal = SSIM()
 
 for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     epoch_start_time = time.time()
@@ -157,45 +155,6 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
                       Variable(data['image'].cuda()), Variable(data['pose'].cuda()),
                       Variable(data['image'].cuda()), Variable(mask_fore.cuda()))
 
-        # sum per device losses
-        losses = [torch.mean(x) if not isinstance(x, int) else x for x in losses]
-        loss_dict = dict(zip(model.module.loss_names, losses))
-
-        # calculate final loss scalar
-        loss_D = (loss_dict['D_fake'] + loss_dict['D_real']) * 0.5
-        loss_G = loss_dict['G_GAN']+torch.mean(CE_loss)  #loss_dict.get('G_GAN_Feat',0)+torch.mean(L1_loss)+loss_dict.get('G_VGG',0)
-
-        writer.add_scalar('loss_d', loss_D, step)
-        writer.add_scalar('loss_g', loss_G, step)
-        # writer.add_scalar('loss_L1', torch.mean(L1_loss), step)
-
-        writer.add_scalar('loss_CE', torch.mean(CE_loss), step)
-        # writer.add_scalar('acc', torch.mean(acc)*100, step)
-        # writer.add_scalar('loss_face', torch.mean(face_loss), step)
-        # writer.add_scalar('loss_fore', torch.mean(fore_loss), step)
-        # writer.add_scalar('loss_tv', torch.mean(tv_loss), step)
-        # writer.add_scalar('loss_mask', torch.mean(mask_loss), step)
-        # writer.add_scalar('loss_style', torch.mean(style_loss), step)
-
-        writer.add_scalar('loss_g_gan', loss_dict['G_GAN'], step)
-        # writer.add_scalar('loss_g_gan_feat', loss_dict['G_GAN_Feat'], step)
-        # writer.add_scalar('loss_g_vgg', loss_dict['G_VGG'], step)
-
-        ############### Backward Pass ####################
-        # update generator weights
-        # model.module.optimizer_G.zero_grad()
-        # loss_G.backward()
-        # model.module.optimizer_G.step()
-        #
-        # # update discriminator weights
-        # model.module.optimizer_D.zero_grad()
-        # loss_D.backward()
-        # model.module.optimizer_D.step()
-
-        #call(["nvidia-smi", "--format=csv", "--query-gpu=memory.used,memory.free"])
-
-        ############## Display results and errors ##########
-
         ### display output images
         a = generate_label_color(generate_label_plain(input_label)).float().cuda()
         b = real_cloth.float().cuda()
@@ -206,7 +165,6 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         cv_img = (combine.permute(1, 2, 0).detach().cpu().numpy()+1) / 2
         fake_img_cv = (fake_image[0].permute(1, 2, 0).detach().cpu().numpy() + 1) / 2
         if step % 1 == 0 and not opt.no_img:
-            writer.add_image('combine', (combine.data + 1) / 2.0, step)
             rgb = (cv_img*255).astype(np.uint8)
             fake_rgb = (fake_img_cv*255).astype(np.uint8)
 

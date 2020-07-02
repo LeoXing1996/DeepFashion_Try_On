@@ -171,12 +171,13 @@ class Pix2PixHDModel(BaseModel):
             print('---------- Networks initialized -------------')
 
         # load networks
-        if not self.isTrain or opt.continue_train or opt.load_pretrain:
-            pretrained_path = '' if not self.isTrain else opt.load_pretrain
-            self.load_network(self.Unet, 'U', opt.which_epoch, pretrained_path)
-            self.load_network(self.G1, 'G1', opt.which_epoch, pretrained_path)
-            self.load_network(self.G2, 'G2', opt.which_epoch, pretrained_path)
-            self.load_network(self.G, 'G', opt.which_epoch, pretrained_path)
+        # if not self.isTrain or opt.continue_train or opt.load_pretrain:
+        # pretrained_path = '' if not self.isTrain else opt.load_pretrain
+        pretrained_path = os.path.join(opt.ckpt_base, opt.which_ckpt)
+        self.load_network(self.Unet, 'U', opt.which_epoch, pretrained_path)
+        self.load_network(self.G1, 'G1', opt.which_epoch, pretrained_path)
+        self.load_network(self.G2, 'G2', opt.which_epoch, pretrained_path)
+        self.load_network(self.G, 'G', opt.which_epoch, pretrained_path)
         # set loss functions and optimizers
         if self.isTrain:
             if opt.pool_size > 0 and (len(self.gpu_ids)) > 1:
