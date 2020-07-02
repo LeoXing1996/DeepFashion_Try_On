@@ -321,6 +321,8 @@ class Pix2PixHDModel(BaseModel):
         fake_c = self.tanh(fake_c)
         composition_mask = self.sigmoid(composition_mask)
 
+        comp_fake_c = fake_c*(1-composition_mask).unsqueeze(1)+(composition_mask.unsqueeze(1))*warped
+
         skin_color = self.ger_average_color((arm1_mask+arm2_mask-arm2_mask*arm1_mask),
                                             (arm1_mask+arm2_mask-arm2_mask*arm1_mask)*real_image)
 
@@ -328,7 +330,8 @@ class Pix2PixHDModel(BaseModel):
         img_hole_hand = img_fore*(1-clothes_mask)*(1-arm1_mask)*(1-arm2_mask) + \
             img_fore*arm1_mask*(1-mask) + img_fore*arm2_mask*(1-mask)
 
-        G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask, skin_color, self.gen_noise(shape)], 1)
+        # G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask, skin_color, self.gen_noise(shape)], 1)
+        G_in = torch.cat([img_hole_hand, masked_label, comp_fake_c, skin_color, self.gen_noise(shape)], 1)
         fake_image = self.G.refine(G_in.detach())
         fake_image = self.tanh(fake_image)
         ## THE POOL TO SAVE IMAGES\
@@ -366,9 +369,6 @@ class Pix2PixHDModel(BaseModel):
                 for j in range(len(pred_fake[i])-1):
                     loss_G_GAN_Feat += D_weights * feat_weights * \
                         self.criterionFeat(pred_fake[i][j], pred_real[i][j].detach()) * self.opt.lambda_feat
-
-        #ipdb.set_trace()
-        comp_fake_c = fake_c.detach()*(1-composition_mask).unsqueeze(1)+(composition_mask.unsqueeze(1))*warped.detach()
 
         # VGG feature matching loss
         loss_G_VGG = 0
