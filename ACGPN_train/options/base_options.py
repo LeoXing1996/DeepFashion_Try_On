@@ -40,7 +40,7 @@ class BaseOptions():
         self.parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
 
         # for displays
-        self.parser.add_argument('--display_winsize', type=int, default=512,  help='display window size')
+        self.parser.add_argument('--display_winsize', type=int, default=512, help='display window size')
         self.parser.add_argument('--tf_log', action='store_true', help='if specified, use tensorboard logging. Requires tensorflow installed')
 
         # for generator
