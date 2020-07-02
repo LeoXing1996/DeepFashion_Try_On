@@ -323,9 +323,9 @@ class Pix2PixHDModel(BaseModel):
 
         # TODO: here we can compare `fake_cl` and `???` --> compare result of G2 / warping
         # save_rgb_tensor(fake_cl) and save_rgb_tensor
-        save_rgb_tensor(fake_cl, 'clothMask_Warp', name)
-        save_rgb_tensor(label == 4, 'clothMask_GT', name)
-        save_diff_tensor(fake_cl, label == 4, 'clothMask_diff', name)
+        save_rgb_tensor(fake_cl, 'clothMask_Warp', dir=name)
+        save_rgb_tensor(label == 4, 'clothMask_GT', dir=name)
+        save_diff_tensor(fake_cl, label == 4, 'clothMask_diff', dir=name)
 
         new_arm1_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 11).astype(np.float)).cuda()
         new_arm2_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 13).astype(np.float)).cuda()
@@ -361,6 +361,7 @@ class Pix2PixHDModel(BaseModel):
         fake_c = fake_c*(1-mask)+mask*warped
 
         save_rgb_tensor(fake_c, 'cloth_4_after_comp', dir=name)
+        save_rgb_tensor(real_image*clothes_mask, 'cloth_0_GT', dir=name)
 
         skin_color = self.ger_average_color((arm1_mask + arm2_mask - arm2_mask * arm1_mask),
                                             (arm1_mask + arm2_mask - arm2_mask * arm1_mask) * real_image)
@@ -368,7 +369,8 @@ class Pix2PixHDModel(BaseModel):
             (1 - bigger_arm2_occ * (arm2_mask + arm1_mask + clothes_mask))
         img_hole_hand = img_fore * (1 - clothes_mask) * occlude * (1 - fake_cl_dis)
         # here we change `fake_c` --> `real_image*clothes_mask`
-        G_in = torch.cat([img_hole_hand, dis_label, fake_c, skin_color, self.gen_noise(shape)], 1)
+        G_in = torch.cat([img_hole_hand, dis_label, real_image*clothes_mask, skin_color, self.gen_noise(shape)], 1)
+        # G_in = torch.cat([img_hole_hand, dis_label, fake_c, skin_color, self.gen_noise(shape)], 1)
         fake_image = self.G.refine(G_in.detach())
         fake_image = self.tanh(fake_image)
 

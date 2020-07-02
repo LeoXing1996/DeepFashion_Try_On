@@ -83,4 +83,3 @@ def save_diff_tensor(ten1, ten2, name='debug', base_dir=None, dir=None):
     ten_canv[overlap_np] = lab_overlap
     ten_pil = Image.fromarray((ten_canv * 255).astype(np.uint8))
     ten_pil.save(name_base.format(name))
-
