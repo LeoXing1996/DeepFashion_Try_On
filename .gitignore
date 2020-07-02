@@ -15,3 +15,5 @@ Data_preprocessing/
 */sample/*
 
 ACGPN_inference/debug_img/
+ACGPN_inference/*.sh
+ACGPN_train/*.sh
