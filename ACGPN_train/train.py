@@ -15,7 +15,7 @@ import cv2
 import datetime
 import ipdb
 
-writer = SummaryWriter('runs/uniform_all')
+
 SIZE = 320
 NC = 14
 
@@ -94,7 +94,16 @@ def changearm(old_label):
 
 os.makedirs('sample', exist_ok=True)
 opt = TrainOptions().parse()
+
+ckpt_dir = os.path.join(opt.checkpoints_dir, opt.name)
 iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
+logger_dir = os.path.join('runs', opt.name)
+img_path = os.path.join('sample', opt.name)
+img_base = os.path.join('sample', opt.name, '{}.jpg')
+if not os.path.exists(img_path):
+    os.makedirs(img_path)
+
+writer = SummaryWriter(logger_dir)
 
 if opt.continue_train:
     try:
@@ -209,7 +218,8 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
             writer.add_image('combine', (combine.data + 1) / 2.0, step)
             rgb = (cv_img*255).astype(np.uint8)
             bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-            cv2.imwrite('sample/test'+str(step)+'.jpg', bgr)
+            # cv2.imwrite('sample/test'+str(step)+'.jpg', bgr)
+            cv2.imwrite(img_base.format(str(step)), bgr)
 
         step += 1
         iter_end_time = time.time()
