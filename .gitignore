@@ -13,7 +13,13 @@ Data_preprocessing/
 
 */models/*.pth
 */sample/*
+landmark_res/
 
 ACGPN_inference/debug_img/
 ACGPN_inference/*.sh
 ACGPN_train/*.sh
+
+landmark/anno/*.txt
+landmark/checkpoint/
+landmark/*.sh
+landmark/data/
