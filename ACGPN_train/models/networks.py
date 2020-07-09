@@ -5,6 +5,7 @@ import os
 import torch.nn as nn
 import functools
 from torch.autograd import Variable
+from torchvision import models
 import numpy as np
 import torch.nn.functional as F
 import math
@@ -518,11 +519,11 @@ class UnetMask(nn.Module):
         # input: clothes
         # refer: clothes_mask
         # mask:  pre_clothes_mask
-        input, warped_mask, rx, ry, cx, cy, rg, cg = \
-            self.stn(input, torch.cat([mask, refer, input], 1), mask)
-        #ipdb.set_trace()# print(input.shape)
+        # input, warped_mask, rx, ry, cx, cy, rg, cg = \
+        #     self.stn(input, torch.cat([mask, refer, input], 1), mask)
 
-        conv1 = self.conv1(torch.cat([refer.detach(), input.detach()], 1))
+        # conv1 = self.conv1(torch.cat([refer.detach(), input.detach()], 1))
+        conv1 = self.conv1(torch.cat([refer, input], 1))
         pool1 = self.pool1(conv1)
 
         conv2 = self.conv2(pool1)
@@ -549,7 +550,8 @@ class UnetMask(nn.Module):
 
         up9 = self.up9(conv8)
         conv9 = self.conv9(torch.cat([conv1, up9], 1))
-        return conv9, input, warped_mask, rx, ry, cx, cy, rg, cg
+        # return conv9, input, warped_mask, rx, ry, cx, cy, rg, cg
+        return conv9
 
 
 class Unet(nn.Module):
@@ -607,7 +609,7 @@ class Unet(nn.Module):
                                      ])
 
     def forward(self, input, refer, mask):
-        input, warped_mask,rx,ry,cx,cy = self.stn(input, torch.cat([mask, refer, input], 1), mask)
+        input, warped_mask, rx, ry, cx, cy = self.stn(input, torch.cat([mask, refer, input], 1), mask)
         #ipdb.set_trace()
         conv1 = self.conv1(torch.cat([refer.detach(), input.detach()], 1))
         pool1 = self.pool1(conv1)
@@ -636,7 +638,7 @@ class Unet(nn.Module):
 
         up9 = self.up9(conv8)
         conv9 = self.conv9(torch.cat([conv1, up9], 1))
-        return conv9, input, warped_mask,rx,ry,cx,cy
+        return conv9, input, warped_mask, rx, ry, cx, cy
 
     def refine(self, input):
         conv1 = self.conv1(input)
@@ -941,9 +943,6 @@ class NLayerDiscriminator(nn.Module):
             return res[1:]
         else:
             return self.model(input)
-
-
-from torchvision import models
 
 
 class Vgg19(torch.nn.Module):
@@ -1561,7 +1560,7 @@ class BoundedGridLocNet(nn.Module):
             flag = False
             max = -1
             for j in range(num - 1):
-                differ = (coor[:, (j+1) * num + i , :] - coor[:, j * num + i, :]) ** 2
+                differ = (coor[:, (j+1) * num + i, :] - coor[:, j * num + i, :]) ** 2
                 if not flag:
                     second_dif = 0
                     flag = True
