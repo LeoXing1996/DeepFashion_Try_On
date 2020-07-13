@@ -134,7 +134,7 @@ class AlignedDataset(BaseDataset):
         ### input B (real images)
 
         B_path = self.B_paths[index]
-        name=B_path.split('/')[-1]
+        name = B_path.split('/')[-1]
 
         BR_path = self.BR_paths[index]
         B = Image.open(B_path).convert('RGB')

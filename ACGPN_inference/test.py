@@ -12,7 +12,7 @@ from torch.autograd import Variable
 from tensorboardX import SummaryWriter
 import cv2
 
-# from util.SSIM import SSIM
+from util.debug import ImageDebugger
 
 SIZE = 320
 NC = 14
@@ -79,10 +79,10 @@ def changearm(old_label):
 os.makedirs('sample', exist_ok=True)
 opt = TrainOptions().parse()
 
-save_dir = os.path.join('sample', opt.name)
+save_dir = os.path.join('sample', opt.which_ckpt)
+if opt.name:
+    save_dir = os.path.join(save_dir, opt.name)
 img_dir = os.path.join(save_dir, 'img')
-summ_dir = os.path.join(save_dir, 'logs')
-debug_dir = os.path.join(save_dir, 'debug')
 
 if not os.path.exists(img_dir):
     os.makedirs(img_dir)
@@ -102,13 +102,13 @@ if opt.debug:
     opt.print_freq = 1
     opt.niter = 1
     opt.niter_decay = 0
-    opt.max_dataset_size = 10
     opt.nThread = 1
     # import pdb
     # pdb.set_trace()
 
-if not os.path.exists('debug_img'):
-    os.makedirs('debug_img')
+debugger = ImageDebugger(opt)
+# if not os.path.exists('debug_img'):
+#     os.makedirs('debug_img')
 
 data_loader = CreateDataLoader(opt)
 dataset = data_loader.load_data()
@@ -158,7 +158,8 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
                       Variable(img_fore.cuda()), Variable(mask_clothes.cuda()),
                       Variable(data['color'].cuda()), Variable(all_clothes_label.cuda()),
                       Variable(data['image'].cuda()), Variable(data['pose'].cuda()),
-                      Variable(data['image'].cuda()), Variable(mask_fore.cuda()), data['name'])
+                      Variable(data['image'].cuda()), Variable(mask_fore.cuda()),
+                      data['name'], debugger)
 
         ############## Display results and errors ##########
 
