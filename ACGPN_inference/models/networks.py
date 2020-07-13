@@ -516,11 +516,7 @@ class UnetMask(nn.Module):
                                      nn.Conv2d(64, output_nc, kernel_size=3, stride=1, padding=1)
                                      ])
 
-    def forward(self, input, refer, mask, grid):
-
-        input, warped_mask, rx, ry, cx, cy, grid = \
-            self.stn(input, torch.cat([mask, refer, input], 1), mask, grid)
-        # print(input.shape)
+    def forward(self, input, refer, mask):
 
         conv1 = self.conv1(torch.cat([refer.detach(), input.detach()], 1))
         pool1 = self.pool1(conv1)
@@ -549,7 +545,7 @@ class UnetMask(nn.Module):
 
         up9 = self.up9(conv8)
         conv9 = self.conv9(torch.cat([conv1, up9], 1))
-        return conv9, input, warped_mask, grid
+        return conv9
 
 
 class Unet(nn.Module):

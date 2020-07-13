@@ -14,9 +14,10 @@ opt = TrainOptions().parse()
 dataroot = opt.dataroot
 phase = opt.phase
 
-save_dir = os.path.join('sample', opt.name)
+save_dir = os.path.join('sample', opt.which_ckpt)
+if opt.name:
+    save_dir = os.path.join(save_dir, opt.name)
 img_dir = os.path.join(save_dir, 'img')
-summ_dir = os.path.join(save_dir, 'logs')
 
 
 # data_loader = CreateDataLoader(opt)
