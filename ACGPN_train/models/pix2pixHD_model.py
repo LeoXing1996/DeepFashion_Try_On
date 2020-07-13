@@ -347,7 +347,7 @@ class Pix2PixHDModel(BaseModel):
         loss_D_real = 0
         loss_G_GAN = 0
         loss_G_GAN_Feat = 0
-        import pdb; pdb.set_trace()
+
         for iter_p in range(pool_lenth):
 
             # Fake Detection and Loss
