@@ -310,18 +310,7 @@ class Pix2PixHDModel(BaseModel):
         ## construct full label map
         armlabel_map = armlabel_map*(1-fake_cl_dis)+fake_cl_dis*4
 
-        # fake_c, warped, warped_mask, rx, ry, cx, cy, rg, cg = \
-        #     self.Unet(clothes, clothes_mask, pre_clothes_mask)
         fake_c = self.Unet(clothes, clothes_mask, pre_clothes_mask)
-        #ipdb.set_trace()
-        # fake_c --> 4 channel
-        # tanh(0~2) : T_c^R  (refined cloth in Eq 6)
-        # sigmoid(3): \alpha (mask in Eq 6)
-        composition_mask = fake_c[:, 3, :, :]
-        fake_c = fake_c[:, 0:3, :, :]
-        fake_c = self.tanh(fake_c)
-        composition_mask = self.sigmoid(composition_mask)
-        comp_fake_c = fake_c*(1-composition_mask).unsqueeze(1)
 
         skin_color = self.ger_average_color((arm1_mask+arm2_mask-arm2_mask*arm1_mask),
                                             (arm1_mask+arm2_mask-arm2_mask*arm1_mask)*real_image)
@@ -331,7 +320,7 @@ class Pix2PixHDModel(BaseModel):
             img_fore*arm1_mask*(1-mask) + img_fore*arm2_mask*(1-mask)
 
         # G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask, skin_color, self.gen_noise(shape)], 1)
-        G_in = torch.cat([img_hole_hand, masked_label, comp_fake_c, skin_color, self.gen_noise(shape)], 1)
+        G_in = torch.cat([img_hole_hand, masked_label, fake_c, skin_color, self.gen_noise(shape)], 1)
         fake_image = self.G.refine(G_in.detach())
         fake_image = self.tanh(fake_image)
         ## THE POOL TO SAVE IMAGES\
@@ -374,8 +363,8 @@ class Pix2PixHDModel(BaseModel):
         loss_G_VGG = 0
         # loss_G_VGG += self.criterionVGG.warp(warped, real_image*clothes_mask) + \
         #     self.criterionVGG.warp(comp_fake_c, real_image*clothes_mask) * 10
-        loss_G_VGG += self.criterionVGG.warp(comp_fake_c, real_image*clothes_mask) * 10
-        loss_G_VGG += self.criterionVGG.warp(fake_c, real_image*clothes_mask) * 20
+        # loss_G_VGG += self.criterionVGG.warp(comp_fake_c, real_image*clothes_mask) * 10
+        loss_G_VGG += self.criterionVGG.warp(fake_c, real_image*clothes_mask) * 30
         loss_G_VGG += self.criterionVGG(fake_image, real_image) * 10
 
         L1_loss = self.criterionFeat(fake_image, real_image)
@@ -383,9 +372,9 @@ class Pix2PixHDModel(BaseModel):
         # L1_loss += self.criterionFeat(warped_mask, clothes_mask) + \
         #     self.criterionFeat(warped, real_image*clothes_mask)  # L4
         L1_loss += self.criterionFeat(fake_cl, clothes_mask)  # use fake_cl to replace warped_mask
-        L1_loss += self.criterionFeat(fake_c, real_image*clothes_mask)*0.2
-        L1_loss += self.criterionFeat(comp_fake_c, real_image*clothes_mask)*10
-        L1_loss += self.criterionFeat(composition_mask, clothes_mask)
+        L1_loss += self.criterionFeat(fake_c, real_image*clothes_mask)*10
+        # L1_loss += self.criterionFeat(comp_fake_c, real_image*clothes_mask)*10
+        # L1_loss += self.criterionFeat(composition_mask, clothes_mask)
 
         #
         # style_loss=self.criterionStyle(fake_image, real_image)*200
@@ -398,7 +387,7 @@ class Pix2PixHDModel(BaseModel):
         #         rx*0.1, ry*0.1, cx*0.1, cy*0.1, rg*0.1, cg*0.1]
         return [self.loss_filter(loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_D_real, loss_D_fake),
                 L1_loss, style_loss, CE_loss,
-                fake_image, real_image, dis_label, fake_cl, comp_fake_c]
+                fake_image, real_image, dis_label, fake_cl, fake_c]
 
     def inference(self, label, label_ref, image_ref):
 

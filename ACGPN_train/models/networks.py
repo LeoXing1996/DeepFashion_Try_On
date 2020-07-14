@@ -63,7 +63,8 @@ def define_Unet(input_nc, gpu_ids=[]):
 
 
 def define_UnetMask(input_nc, gpu_ids=[]):
-    netG = UnetMask(input_nc, output_nc=4)
+    # change output nc to 3
+    netG = UnetMask(input_nc, output_nc=3)
     netG.cuda(gpu_ids[0])
     netG.apply(weights_init)
     return netG
@@ -464,7 +465,6 @@ class AttentionNorm(nn.Module):
 class UnetMask(nn.Module):
     def __init__(self, input_nc, output_nc=3):
         super(UnetMask, self).__init__()
-        self.stn = STNNet()
         nl = nn.InstanceNorm2d
         self.conv1 = nn.Sequential(*[nn.Conv2d(input_nc, 64, kernel_size=3, stride=1, padding=1), nl(64), nn.ReLU(),
                                      nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1), nl(64), nn.ReLU()])
