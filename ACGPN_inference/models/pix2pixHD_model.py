@@ -289,10 +289,13 @@ class Pix2PixHDModel(BaseModel):
                 img_fore, clothes_mask,
                 clothes, all_clothes_label,
                 real_image, pose,
-                grid, mask_fore, name):
+                grid, mask_fore,
+                name, debugger=None):
         # Encode Inputs
         # import ipdb
         # ipdb.set_trace()
+        if debugger is not None:
+            debugger.set_img_name(name)
         input_label, masked_label, all_clothes_label = self.encode_input(label, clothes_mask, all_clothes_label)
         arm1_mask = torch.FloatTensor((label.cpu().numpy() == 11).astype(np.float)).cuda()
         arm2_mask = torch.FloatTensor((label.cpu().numpy() == 13).astype(np.float)).cuda()
@@ -323,9 +326,9 @@ class Pix2PixHDModel(BaseModel):
 
         # TODO: here we can compare `fake_cl` and `???` --> compare result of G2 / warping
         # save_rgb_tensor(fake_cl) and save_rgb_tensor
-        save_rgb_tensor(fake_cl, 'clothMask_Warp', dir=name)
-        save_rgb_tensor(label == 4, 'clothMask_GT', dir=name)
-        save_diff_tensor(fake_cl, label == 4, 'clothMask_diff', dir=name)
+        debugger.save_rgb_tensor(fake_cl, 'clothMask_Warp')
+        debugger.save_rgb_tensor(label == 4, 'clothMask_GT')
+        debugger.save_diff_tensor(fake_cl, label == 4, 'clothMask_diff')
 
         new_arm1_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 11).astype(np.float)).cuda()
         new_arm2_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 13).astype(np.float)).cuda()
@@ -345,23 +348,23 @@ class Pix2PixHDModel(BaseModel):
         armlabel_map *= (1-fake_cl_dis)
         dis_label = encode(armlabel_map, armlabel_map.shape)
 
-        save_rgb_tensor(clothes, 'cloth_1_before_STN', dir=name)
+        debugger.save_rgb_tensor(clothes, 'cloth_1_before_STN')
 
         fake_c, warped, warped_mask, warped_grid = \
             self.Unet(clothes, fake_cl_dis, pre_clothes_mask, grid)
 
-        save_rgb_tensor(warped, 'cloth_2_after_STN', dir=name)
+        debugger.save_rgb_tensor(warped, 'cloth_2_after_STN')
 
         mask = fake_c[:, 3, :, :]
         mask = self.sigmoid(mask)*fake_cl_dis
         fake_c = self.tanh(fake_c[:, 0:3, :, :])
 
-        save_rgb_tensor(fake_c, 'cloth_3_after_refine', dir=name)
+        debugger.save_rgb_tensor(fake_c, 'cloth_3_after_refine')
 
         fake_c = fake_c*(1-mask)+mask*warped
 
-        save_rgb_tensor(fake_c, 'cloth_4_after_comp', dir=name)
-        save_rgb_tensor(real_image*clothes_mask, 'cloth_0_GT', dir=name)
+        debugger.save_rgb_tensor(fake_c, 'cloth_4_after_comp')
+        debugger.save_rgb_tensor(real_image*clothes_mask, 'cloth_0_GT')
 
         skin_color = self.ger_average_color((arm1_mask + arm2_mask - arm2_mask * arm1_mask),
                                             (arm1_mask + arm2_mask - arm2_mask * arm1_mask) * real_image)
