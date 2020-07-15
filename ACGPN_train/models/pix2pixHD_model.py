@@ -239,6 +239,15 @@ class Pix2PixHDModel(BaseModel):
 
         return input_label, input_label_ref, real_image_ref
 
+    def get_upper_body_label(self, label_map):
+        # Label want to remove: 8 -> Pants | 9 -> Left_leg | 10 -> Right_leg
+        upper_map = label_map.detach().clone()
+        pants_map = (label_map == 8).type(torch.float32)
+        l_leg_map = (label_map == 9).type(torch.float32)
+        r_leg_map = (label_map == 10).type(torch.float32)
+        upper_map = upper_map * (1-pants_map) * (1-l_leg_map) * (1-r_leg_map)
+        return upper_map
+
     def discriminate(self, netD, input_label, test_image, use_pool=False):
         input_concat = torch.cat((input_label, test_image.detach()), dim=1)
         if use_pool:
@@ -254,7 +263,6 @@ class Pix2PixHDModel(BaseModel):
         noise = np.asarray(noise / 255, dtype=np.uint8)
         noise = torch.tensor(noise, dtype=torch.float32)
         return noise.cuda()
-    #data['label'],data['edge'],img_fore.cuda()),Variable(mask_clothes, ,Variable(data['color'].cuda()),Variable(all_clothes_label.cuda()))
 
     def forward(self, label, pre_clothes_mask,
                 img_fore, clothes_mask,
@@ -270,6 +278,12 @@ class Pix2PixHDModel(BaseModel):
         #   input_label: real_image mask with all part
         #   masked_label: mask w/o cloth part (M_W^S)
         #   all_clothes_label: combine `arm` and `cloth` as `cloth` label, fused map in paper (M^F)
+
+        # what I want to do ?
+        # 1. generate w/o cloth mask
+        # 2. generate cloth mask
+        # 3. generate cloth + arm + head
+
         input_label, masked_label, all_clothes_label = self.encode_input(label, clothes_mask, all_clothes_label)
 
         arm1_mask = torch.FloatTensor((label.cpu().numpy() == 11).astype(np.float)).cuda()
@@ -294,7 +308,6 @@ class Pix2PixHDModel(BaseModel):
         fake_cl = self.sigmoid(fake_cl)
         CE_loss += self.BCE(fake_cl, clothes_mask)*10
 
-        #ipdb.set_trace()
         fake_cl_dis = torch.FloatTensor((fake_cl.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
         new_arm1_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 11).astype(np.float)).cuda()
         new_arm2_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 13).astype(np.float)).cuda()
@@ -310,10 +323,17 @@ class Pix2PixHDModel(BaseModel):
         ## construct full label map
         armlabel_map = armlabel_map*(1-fake_cl_dis)+fake_cl_dis*4
 
-        fake_c = self.Unet(clothes, clothes_mask, pre_clothes_mask)
-
+        # 1. get up label map --> label w/o 8, 9, 10 ()
+        # 2. use Unet generate upper image + pose detection loss
         skin_color = self.ger_average_color((arm1_mask+arm2_mask-arm2_mask*arm1_mask),
                                             (arm1_mask+arm2_mask-arm2_mask*arm1_mask)*real_image)
+        upper_map = self.get_upper_body_label(armlabel_map)
+        fake_c = self.Unet(clothes, upper_map, skin_color)
+
+        # fake_c = self.Unet(clothes, clothes_mask, pre_clothes_mask)
+
+        # skin_color = self.ger_average_color((arm1_mask+arm2_mask-arm2_mask*arm1_mask),
+        #                                     (arm1_mask+arm2_mask-arm2_mask*arm1_mask)*real_image)
 
         # img_hole_hand --> gt of `I_W` in Eq 9
         img_hole_hand = img_fore*(1-clothes_mask)*(1-arm1_mask)*(1-arm2_mask) + \
