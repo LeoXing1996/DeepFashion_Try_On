@@ -348,21 +348,19 @@ class Pix2PixHDModel(BaseModel):
         armlabel_map *= (1-fake_cl_dis)
         dis_label = encode(armlabel_map, armlabel_map.shape)
 
-        debugger.save_rgb_tensor(clothes, 'cloth_1_before_STN')
+        debugger.save_rgb_tensor(clothes, 'cloth_1_before_warping')
 
         fake_c = self.Unet(clothes, fake_cl_dis, pre_clothes_mask)
 
-        # save_rgb_tensor(warped, 'cloth_2_after_STN', dir=name)
+        # mask = fake_c[:, 3, :, :]
+        # mask = self.sigmoid(mask)*fake_cl_dis
+        # fake_c = self.tanh(fake_c[:, 0:3, :, :])  TODO should by add here
+        fake_c = self.tanh(fake_c)
+        debugger.save_rgb_tensor(fake_c, 'cloth_2_after_refine')
 
-        mask = fake_c[:, 3, :, :]
-        mask = self.sigmoid(mask)*fake_cl_dis
-        fake_c = self.tanh(fake_c[:, 0:3, :, :])
+        # fake_c = fake_c*(1-mask)
 
-        debugger.save_rgb_tensor(fake_c, 'cloth_3_after_refine')
-
-        fake_c = fake_c*(1-mask)
-
-        debugger.save_rgb_tensor(fake_c, 'cloth_4_after_comp')
+        # debugger.save_rgb_tensor(fake_c, 'cloth_4_after_comp')
         debugger.save_rgb_tensor(real_image*clothes_mask, 'cloth_0_GT')
 
         skin_color = self.ger_average_color((arm1_mask + arm2_mask - arm2_mask * arm1_mask),

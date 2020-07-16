@@ -1,6 +1,6 @@
 export CUDA_VISIBLE_DEVICES=1
 
-SETTING='noWarping'
+SETTING='noWarpingNoMask'
 
 for ep in {10..40..10}
 do

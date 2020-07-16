@@ -312,6 +312,7 @@ class Pix2PixHDModel(BaseModel):
 
         fake_c = self.Unet(clothes, clothes_mask, pre_clothes_mask)
 
+        fake_c = self.tanh(fake_c)
         skin_color = self.ger_average_color((arm1_mask+arm2_mask-arm2_mask*arm1_mask),
                                             (arm1_mask+arm2_mask-arm2_mask*arm1_mask)*real_image)
 
