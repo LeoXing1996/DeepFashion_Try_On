@@ -9,12 +9,16 @@ class BaseModel(torch.nn.Module):
     def name(self):
         return 'BaseModel'
 
-    def initialize(self, opt):
+    def initialize(self, opt, rank=None):
         self.opt = opt
         self.gpu_ids = opt.gpu_ids
         self.isTrain = opt.isTrain
         self.Tensor = torch.cuda.FloatTensor if self.gpu_ids else torch.Tensor
         self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
+        # add code for DDP
+        self.rank = rank
+        # if rank:
+        #     torch.cuda.set_device(rank)
 
     def set_input(self, input):
         self.input = input
@@ -43,11 +47,17 @@ class BaseModel(torch.nn.Module):
 
     # helper saving function that can be used by subclasses
     def save_network(self, network, network_label, epoch_label, gpu_ids):
-        save_filename = '%s_net_%s.pth' % (epoch_label, network_label)
-        save_path = os.path.join(self.save_dir, save_filename)
-        torch.save(network.state_dict(), save_path)
+        if self.rank is None or self.rank == 0:
+            save_filename = '%s_net_%s.pth' % (epoch_label, network_label)
+            save_path = os.path.join(self.save_dir, save_filename)
+            torch.save(network.state_dict(), save_path)
         # if len(gpu_ids) and torch.cuda.is_available():
         #     network.cuda()
+
+    def load_dist(self, network, save_file):
+        map_location = self.rank
+        state_dict = torch.load(save_file, map_location=map_location)
+        network.load_state_dict(state_dict)
 
     # helper loading function that can be used by subclasses
     def load_network(self, network, network_label, epoch_label, save_dir=''):
@@ -60,9 +70,9 @@ class BaseModel(torch.nn.Module):
             print('%s not exists yet!' % save_path)
             if network_label == 'G':
                 raise('Generator must exist!')
+        elif self.rank:
+            self.load_dist(network, save_path)
         else:
-            #network.load_state_dict(torch.load(save_path))
-
             network.load_state_dict(torch.load(save_path))
             # except:
             #     pretrained_dict = torch.load(save_path)

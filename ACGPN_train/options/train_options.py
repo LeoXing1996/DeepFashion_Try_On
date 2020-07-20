@@ -34,4 +34,16 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--no_lsgan', action='store_true', help='do *not* use least square GAN, if false, use vanilla GAN')
         self.parser.add_argument('--pool_size', type=int, default=0, help='the size of image buffer that stores previously generated images')
 
+        # for evaluate loss
+        self.parser.add_argument('--warpedMask', type=float, default=1)
+        self.parser.add_argument('--predMask', type=float, default=0)
+        self.parser.add_argument('--compMask', type=float, default=1)
+        self.parser.add_argument('--warpedCloth', type=float, default=1)
+        self.parser.add_argument('--unetCloth', type=float, default=0.2)
+        self.parser.add_argument('--refinedCloth', type=float, default=10)
+        self.parser.add_argument('--e2eContent', action='store_true', default=False, help='end2end training of content fusion module')
+
+        # for pytorch DDP
+        self.parser.add_argument('--local_rank', default=None, type=int,
+                                 help='node rank for distributed training')
         self.isTrain = True

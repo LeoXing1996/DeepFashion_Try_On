@@ -40,7 +40,7 @@ class BaseOptions():
         self.parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
 
         # for displays
-        self.parser.add_argument('--display_winsize', type=int, default=512,  help='display window size')
+        self.parser.add_argument('--display_winsize', type=int, default=512, help='display window size')
         self.parser.add_argument('--tf_log', action='store_true', help='if specified, use tensorboard logging. Requires tensorflow installed')
 
         # for generator
@@ -72,16 +72,17 @@ class BaseOptions():
             torch.cuda.set_device(self.opt.gpu_ids[0])
 
         args = vars(self.opt)
-
-        print('------------ Options -------------')
-        for k, v in sorted(args.items()):
-            print('%s: %s' % (str(k), str(v)))
-        print('-------------- End ----------------')
+        MAIN_DEVICE = self.opt.local_rank is None or self.opt.local_rank == 0
+        if MAIN_DEVICE:
+            print('------------ Options -------------')
+            for k, v in sorted(args.items()):
+                print('%s: %s' % (str(k), str(v)))
+            print('-------------- End ----------------')
 
         # save to the disk
         expr_dir = os.path.join(self.opt.checkpoints_dir, self.opt.name)
         util.mkdirs(expr_dir)
-        if save and not self.opt.continue_train:
+        if save and not self.opt.continue_train and MAIN_DEVICE:
             file_name = os.path.join(expr_dir, 'opt.txt')
             with open(file_name, 'wt') as opt_file:
                 opt_file.write('------------ Options -------------\n')

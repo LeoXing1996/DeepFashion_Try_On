@@ -9,7 +9,7 @@ import json
 import numpy as np
 import os.path as osp
 from PIL import ImageDraw
-import ipdb
+# import ipdb
 
 
 class AlignedDataset(BaseDataset):
