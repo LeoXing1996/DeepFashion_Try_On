@@ -110,6 +110,12 @@ def save_model(model, epoch, rank=None):
         model.save(epoch)
 
 
+def debug_ddp_grad(model, step, rank, show_num=10):
+    for name, ten in model.named_parameters():
+        print('Step: {} Rank: {} Name: {} Grad: {}'.format(step, rank, name, ten.view(-1)[:show_num]))
+        break
+
+
 def main():
     os.makedirs('sample', exist_ok=True)
     opt = TrainOptions().parse()
@@ -217,6 +223,9 @@ def main():
                 model.optimizer_D.zero_grad()
                 loss_D.backward()
                 model.optimizer_D.step()
+
+                if opt.debug:  # here we try to check grad of model.G
+                    debug_ddp_grad(model.G1, step, rank)
 
             ############## Display results and errors ##########
             if step % opt.display_freq == 0 and MAIN_DEVICE:
