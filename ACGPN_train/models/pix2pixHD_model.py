@@ -79,10 +79,11 @@ class Pix2PixHDModel(BaseModel):
         # add syncBN if necessary
         network = SyncBatchNorm.convert_sync_batchnorm(network)
         network_dist = DDP(network.cuda(self.rank), device_ids=[self.rank])
+        # print('Apply dist for on rank : {}'.format(self.rank))
         return network_dist
 
     def to_cuda(self, network):
-        if self.rank:
+        if self.rank is not None:
             return self.apply_dist(network)
         else:
             return network.cuda(self.gpu_ids[0])
@@ -272,6 +273,16 @@ class Pix2PixHDModel(BaseModel):
                 img_fore, clothes_mask,
                 clothes, all_clothes_label,
                 real_image, pose, mask):
+        # debug here we want to check of all tensor is on target device_ids
+        # input_dict = {'label': label, 'pre_clothes_mask': pre_clothes_mask,
+        #               'img_fore': img_fore, 'clothes_mask': clothes_mask,
+        #               'clothes': clothes, 'all_clothes_label': all_clothes_label,
+        #               'real_image': real_image, 'pose': pose, 'mask': mask}
+        # num_inputs = len(input_dict)
+        # for idx, (name, tensor) in enumerate(input_dict.items()):
+        #     info_base = 'RAND: {:d} {:2d}/{:2d}: {:15s} is on {}'
+        #     devices = tensor.device
+        #     print(info_base.format(self.rank, idx+1, num_inputs, name, devices))
         # Some input:
         # img_fore -> foreground of `real_images`
         # clothes_mask -> target (part of `label` == 4 or cloth in real image)
@@ -294,7 +305,7 @@ class Pix2PixHDModel(BaseModel):
         shape = pre_clothes_mask.shape
 
         G1_in = torch.cat([pre_clothes_mask, clothes, all_clothes_label, pose, self.gen_noise(shape)], dim=1)
-        arm_label = self.G1.refine(G1_in)
+        arm_label = self.G1(G1_in)
         arm_label = self.sigmoid(arm_label)
         CE_loss = self.cross_entropy2d(arm_label, (label * (1 - clothes_mask)).transpose(0, 1)[0].long())*10
 
@@ -302,7 +313,7 @@ class Pix2PixHDModel(BaseModel):
         dis_label = generate_discrete_label(arm_label.detach(), 14)
 
         G2_in = torch.cat([pre_clothes_mask, clothes, masked_label, pose, self.gen_noise(shape)], 1)
-        fake_cl = self.G2.refine(G2_in)
+        fake_cl = self.G2(G2_in)
         fake_cl = self.sigmoid(fake_cl)
         CE_loss += self.BCE(fake_cl, clothes_mask)*10
 
@@ -345,14 +356,14 @@ class Pix2PixHDModel(BaseModel):
                 (composition_mask.unsqueeze(1))*warped
             G_in = torch.cat([img_hole_hand, masked_label, comp_fake_c,
                               skin_color, self.gen_noise(shape)], 1)
-            fake_image = self.G.refine(G_in)
+            fake_image = self.G(G_in)
             fake_image = self.tanh(fake_image)
         else:
             comp_fake_c = fake_c.detach()*(1-composition_mask).unsqueeze(1) + \
                 (composition_mask.unsqueeze(1))*warped.detach()
             G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask,
                               skin_color, self.gen_noise(shape)], 1)
-            fake_image = self.G.refine(G_in.detach())
+            fake_image = self.G(G_in.detach())
             fake_image = self.tanh(fake_image)
 
         ## THE POOL TO SAVE IMAGES\

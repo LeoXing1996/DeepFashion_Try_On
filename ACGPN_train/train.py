@@ -254,7 +254,8 @@ def main():
             eta = str(datetime.timedelta(seconds=int(eta)))
             time_stamp = datetime.datetime.now()
             now = time_stamp.strftime('%Y.%m.%d-%H:%M:%S')
-            print('{}:{}:[step-{}]--[loss_G-{:.6f}]--[loss_D-{:.6f}]--[ETA-{}]'.format(now, epoch_iter, step, loss_G, loss_D, eta))
+            if MAIN_DEVICE:
+                print('{}:{}:[step-{}]--[loss_G-{:.6f}]--[loss_D-{:.6f}]--[ETA-{}]'.format(now, epoch_iter, step, loss_G, loss_D, eta))
 
             ### save latest model
             if total_steps % opt.save_latest_freq == save_delta and MAIN_DEVICE:

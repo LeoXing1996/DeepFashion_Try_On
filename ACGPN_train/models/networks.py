@@ -722,7 +722,7 @@ class Refine(nn.Module):
                                      nn.Conv2d(64, output_nc, kernel_size=3, stride=1, padding=1)
                                      ])
 
-    def refine(self, input):
+    def forward(self, input):
         conv1 = self.conv1(input)
         pool1 = self.pool1(conv1)
 
