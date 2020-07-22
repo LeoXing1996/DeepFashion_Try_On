@@ -17,3 +17,7 @@ Data_preprocessing/
 ACGPN_inference/debug_img/
 ACGPN_inference/*.sh
 ACGPN_train/*.sh
+
+ACGPN_*/script/
+
+landmark/
