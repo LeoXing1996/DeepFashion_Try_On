@@ -13,11 +13,12 @@ def create_model(opt):
         else:
             model = InferenceModel()
 
-    model.initialize(opt)
+    model.initialize(opt, opt.local_rank)
     if opt.verbose:
         print("model [%s] was created" % (model.name()))
-
-    if opt.isTrain and len(opt.gpu_ids):
+    # if opt.dist model would apply dist itself
+    if opt.isTrain and len(opt.gpu_ids) and (opt.local_rank is None):
+        print('use DP, not good')
         model = torch.nn.DataParallel(model, device_ids=opt.gpu_ids)
 
     return model

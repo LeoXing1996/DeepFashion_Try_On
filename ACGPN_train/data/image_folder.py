@@ -17,19 +17,21 @@ IMG_EXTENSIONS = [
 def is_image_file(filename):
     return any(filename.endswith(extension) for extension in IMG_EXTENSIONS)
 
+
 def make_dataset(dir):
     images = []
     assert os.path.isdir(dir), '%s is not a valid directory' % dir
 
-    f = dir.split('/')[-1].split('_')[-1]
-    print (dir, f)
-    dirs= os.listdir(dir)
+    # f = dir.split('/')[-1].split('_')[-1]
+    # print(dir, f)
+    dirs = os.listdir(dir)
     for img in dirs:
 
         path = os.path.join(dir, img)
         #print(path)
         images.append(path)
     return images
+
 
 def make_dataset_test(dir):
     images = []
@@ -45,6 +47,7 @@ def make_dataset_test(dir):
         #print(path)
         images.append(path)
     return images
+
 
 def default_loader(path):
     return Image.open(path).convert('RGB')

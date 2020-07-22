@@ -72,16 +72,17 @@ class BaseOptions():
             torch.cuda.set_device(self.opt.gpu_ids[0])
 
         args = vars(self.opt)
-
-        print('------------ Options -------------')
-        for k, v in sorted(args.items()):
-            print('%s: %s' % (str(k), str(v)))
-        print('-------------- End ----------------')
+        MAIN_DEVICE = self.opt.local_rank is None or self.opt.local_rank == 0
+        if MAIN_DEVICE:
+            print('------------ Options -------------')
+            for k, v in sorted(args.items()):
+                print('%s: %s' % (str(k), str(v)))
+            print('-------------- End ----------------')
 
         # save to the disk
         expr_dir = os.path.join(self.opt.checkpoints_dir, self.opt.name)
         util.mkdirs(expr_dir)
-        if save and not self.opt.continue_train:
+        if save and not self.opt.continue_train and MAIN_DEVICE:
             file_name = os.path.join(expr_dir, 'opt.txt')
             with open(file_name, 'wt') as opt_file:
                 opt_file.write('------------ Options -------------\n')

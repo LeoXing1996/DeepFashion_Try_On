@@ -13,11 +13,9 @@ Data_preprocessing/
 
 */models/*.pth
 */sample/*
-
-ACGPN_inference/debug_img/
-ACGPN_inference/*.sh
-ACGPN_train/*.sh
-
-ACGPN_*/script/
+# ignore script file
+!*/script/ls_running.sh
+!*/script/kill_exp.sh
+*/script/*.sh
 
 landmark/

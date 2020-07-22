@@ -18,8 +18,6 @@ save_dir = os.path.join('sample', opt.which_ckpt)
 if opt.name:
     save_dir = os.path.join(save_dir, opt.name)
 img_dir = os.path.join(save_dir, 'img')
-
-
 # data_loader = CreateDataLoader(opt)
 
 img_list = [img for img in os.listdir(img_dir) if 'combine' not in img]

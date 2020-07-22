@@ -11,7 +11,9 @@ import cv2
 from .base_model import BaseModel
 from . import networks
 import torch.nn.functional as F
-import ipdb
+
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn import SyncBatchNorm
 
 NC = 20
 
@@ -60,14 +62,31 @@ class Pix2PixHDModel(BaseModel):
         return loss_filter
 
     def get_G(self, in_C, out_c, n_blocks, opt, L=1, S=1):
-        return networks.define_G(in_C, out_c, opt.ngf, opt.netG, L, S,
-                                 opt.n_downsample_global, n_blocks, opt.n_local_enhancers,
-                                 opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids)
+        network = networks.define_G(in_C, out_c, opt.ngf, opt.netG, L, S,
+                                    opt.n_downsample_global, n_blocks, opt.n_local_enhancers,
+                                    opt.n_blocks_local, opt.norm, gpu_ids=self.gpu_ids)
+        if self.rank:
+            return self.apply_dist(network.cuda(self.rank))
+        else:
+            return network.cuda(self.gpu_ids[0])
 
     def get_D(self, inc, opt):
-        netD = networks.define_D(inc, opt.ndf, opt.n_layers_D, opt.norm, opt.no_lsgan,
-                                 opt.num_D, not opt.no_ganFeat_loss, gpu_ids=self.gpu_ids)
-        return netD
+        network = networks.define_D(inc, opt.ndf, opt.n_layers_D, opt.norm, opt.no_lsgan,
+                                    opt.num_D, not opt.no_ganFeat_loss, gpu_ids=self.gpu_ids)
+        return self.to_cuda(network)
+
+    def apply_dist(self, network):
+        # add syncBN if necessary
+        network = SyncBatchNorm.convert_sync_batchnorm(network)
+        network_dist = DDP(network.cuda(self.rank), device_ids=[self.rank])
+        # print('Apply dist for on rank : {}'.format(self.rank))
+        return network_dist
+
+    def to_cuda(self, network):
+        if self.rank is not None:
+            return self.apply_dist(network)
+        else:
+            return network.cuda(self.gpu_ids[0])
 
     def cross_entropy2d(self, input, target, weight=None, size_average=True):
         n, c, h, w = input.size()
@@ -100,8 +119,8 @@ class Pix2PixHDModel(BaseModel):
                 color[i, 2, :, :] = arms[i, 2, :, :].sum()/count
         return color
 
-    def initialize(self, opt):
-        BaseModel.initialize(self, opt)
+    def initialize(self, opt, rank):
+        BaseModel.initialize(self, opt, rank)
         if opt.resize_or_crop != 'none' or not opt.isTrain:  # when training at full res this causes OOM
             torch.backends.cudnn.benchmark = True
         self.isTrain = opt.isTrain
@@ -109,16 +128,10 @@ class Pix2PixHDModel(BaseModel):
         self.count = 0
         self.perm = torch.randperm(1024*4)
         ##### define networks
-        # Generator network
-        # netG_input_nc = input_nc
-
-        # Main Generator
-        # with torch.no_grad():
-        #     pass
-        self.Unet = networks.define_UnetMask(4, self.gpu_ids)
-        self.G1 = networks.define_Refine(37, 14, self.gpu_ids)
-        self.G2 = networks.define_Refine(19+18, 1, self.gpu_ids)
-        self.G = networks.define_Refine(24, 3, self.gpu_ids)
+        self.Unet = self.to_cuda(networks.define_UnetMask(4, self.gpu_ids))
+        self.G1 = self.to_cuda(networks.define_Refine(37, 14, self.gpu_ids))
+        self.G2 = self.to_cuda(networks.define_Refine(19+18, 1, self.gpu_ids))
+        self.G = self.to_cuda(networks.define_Refine(24, 3, self.gpu_ids))
         #ipdb.set_trace()
         self.tanh = nn.Tanh()
         self.sigmoid = nn.Sigmoid()
@@ -151,8 +164,8 @@ class Pix2PixHDModel(BaseModel):
             self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan, tensor=self.Tensor)
             self.criterionFeat = torch.nn.L1Loss()
             if not opt.no_vgg_loss:
-                self.criterionVGG = networks.VGGLoss(self.gpu_ids)
-            self.criterionStyle = networks.StyleLoss(self.gpu_ids)
+                self.criterionVGG = networks.VGGLoss()
+            self.criterionStyle = networks.StyleLoss()
             # Names so we can breakout loss
             self.loss_names = self.loss_filter('G_GAN', 'G_GAN_Feat', 'G_VGG', 'D_real', 'D_fake')
             # initialize optimizers
@@ -260,6 +273,16 @@ class Pix2PixHDModel(BaseModel):
                 img_fore, clothes_mask,
                 clothes, all_clothes_label,
                 real_image, pose, mask):
+        # debug here we want to check of all tensor is on target device_ids
+        # input_dict = {'label': label, 'pre_clothes_mask': pre_clothes_mask,
+        #               'img_fore': img_fore, 'clothes_mask': clothes_mask,
+        #               'clothes': clothes, 'all_clothes_label': all_clothes_label,
+        #               'real_image': real_image, 'pose': pose, 'mask': mask}
+        # num_inputs = len(input_dict)
+        # for idx, (name, tensor) in enumerate(input_dict.items()):
+        #     info_base = 'RAND: {:d} {:2d}/{:2d}: {:15s} is on {}'
+        #     devices = tensor.device
+        #     print(info_base.format(self.rank, idx+1, num_inputs, name, devices))
         # Some input:
         # img_fore -> foreground of `real_images`
         # clothes_mask -> target (part of `label` == 4 or cloth in real image)
@@ -282,7 +305,7 @@ class Pix2PixHDModel(BaseModel):
         shape = pre_clothes_mask.shape
 
         G1_in = torch.cat([pre_clothes_mask, clothes, all_clothes_label, pose, self.gen_noise(shape)], dim=1)
-        arm_label = self.G1.refine(G1_in)
+        arm_label = self.G1(G1_in)
         arm_label = self.sigmoid(arm_label)
         CE_loss = self.cross_entropy2d(arm_label, (label * (1 - clothes_mask)).transpose(0, 1)[0].long())*10
 
@@ -290,7 +313,7 @@ class Pix2PixHDModel(BaseModel):
         dis_label = generate_discrete_label(arm_label.detach(), 14)
 
         G2_in = torch.cat([pre_clothes_mask, clothes, masked_label, pose, self.gen_noise(shape)], 1)
-        fake_cl = self.G2.refine(G2_in)
+        fake_cl = self.G2(G2_in)
         fake_cl = self.sigmoid(fake_cl)
         CE_loss += self.BCE(fake_cl, clothes_mask)*10
 
@@ -328,11 +351,22 @@ class Pix2PixHDModel(BaseModel):
         img_hole_hand = img_fore*(1-clothes_mask)*(1-arm1_mask)*(1-arm2_mask) + \
             img_fore*arm1_mask*(1-mask) + img_fore*arm2_mask*(1-mask)
 
-        G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask, skin_color, self.gen_noise(shape)], 1)
-        fake_image = self.G.refine(G_in.detach())
-        fake_image = self.tanh(fake_image)
+        if self.opt.e2eContent:
+            comp_fake_c = fake_c*(1-composition_mask).unsqueeze(1) + \
+                (composition_mask.unsqueeze(1))*warped
+            G_in = torch.cat([img_hole_hand, masked_label, comp_fake_c,
+                              skin_color, self.gen_noise(shape)], 1)
+            fake_image = self.G(G_in)
+            fake_image = self.tanh(fake_image)
+        else:
+            comp_fake_c = fake_c.detach()*(1-composition_mask).unsqueeze(1) + \
+                (composition_mask.unsqueeze(1))*warped.detach()
+            G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask,
+                              skin_color, self.gen_noise(shape)], 1)
+            fake_image = self.G(G_in.detach())
+            fake_image = self.tanh(fake_image)
+
         ## THE POOL TO SAVE IMAGES\
-        ##
 
         input_pool = [G1_in, G2_in, G_in, torch.cat([clothes_mask, clothes], 1)]        ##fake_cl_dis to replace
         #ipdb.set_trace()
@@ -368,7 +402,6 @@ class Pix2PixHDModel(BaseModel):
                         self.criterionFeat(pred_fake[i][j], pred_real[i][j].detach()) * self.opt.lambda_feat
 
         #ipdb.set_trace()
-        comp_fake_c = fake_c.detach()*(1-composition_mask).unsqueeze(1)+(composition_mask.unsqueeze(1))*warped.detach()
 
         # VGG feature matching loss
         loss_G_VGG = 0
@@ -378,12 +411,22 @@ class Pix2PixHDModel(BaseModel):
         loss_G_VGG += self.criterionVGG(fake_image, real_image) * 10
 
         L1_loss = self.criterionFeat(fake_image, real_image)
-        #
-        L1_loss += self.criterionFeat(warped_mask, clothes_mask) + \
-            self.criterionFeat(warped, real_image*clothes_mask)  # L4
-        L1_loss += self.criterionFeat(fake_c, real_image*clothes_mask)*0.2
-        L1_loss += self.criterionFeat(comp_fake_c, real_image*clothes_mask)*10
-        L1_loss += self.criterionFeat(composition_mask, clothes_mask)
+        # here we modified all L1 loss with weight in `self.opt`
+        L1_loss += self.criterionFeat(warped_mask, clothes_mask) * self.opt.warpedMask
+        L1_loss += self.criterionFeat(warped, real_image*clothes_mask) * self.opt.warpedCloth
+        L1_loss += self.criterionFeat(fake_cl, clothes_mask) * self.opt.predMask  # add L2 loss for predicted_mask
+        L1_loss += self.criterionFeat(fake_c, real_image*clothes_mask) * self.opt.unetCloth
+        L1_loss += self.criterionFeat(comp_fake_c, real_image*clothes_mask) * self.opt.refinedCloth
+        L1_loss += self.criterionFeat(composition_mask, clothes_mask) * self.opt.compMask
+
+        # old loss codes
+        # L1_loss += self.criterionFeat(warped_mask, clothes_mask) + \
+        #     self.criterionFeat(warped, real_image*clothes_mask)  # L4
+        # L1_loss += self.criterionFeat(fake_cl, clothes_mask)  # add L2 loss for predicted_mask
+        # L1_loss += self.criterionFeat(fake_c, real_image*clothes_mask)*0.2
+        # G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask, skin_color, self.gen_noise(shape)], 1)
+        # L1_loss += self.criterionFeat(comp_fake_c, real_image*clothes_mask)*10
+        # L1_loss += self.criterionFeat(composition_mask, clothes_mask)
 
         #
         # style_loss=self.criterionStyle(fake_image, real_image)*200

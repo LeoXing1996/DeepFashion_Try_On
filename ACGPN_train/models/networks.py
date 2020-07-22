@@ -11,7 +11,7 @@ import math
 import itertools
 from grid_sample import grid_sample
 from tps_grid_gen import TPSGridGen
-import ipdb
+# import ipdb
 
 
 ###############################################################################
@@ -47,9 +47,9 @@ def define_G(input_nc, output_nc, ngf, netG, L=1, S=1, n_downsample_global=3, n_
     else:
         raise ('generator not implemented!')
     # print(netG)
-    if len(gpu_ids) > 0:
-        assert (torch.cuda.is_available())
-        netG.cuda(gpu_ids[0])
+    # if len(gpu_ids) > 0:
+    #     assert (torch.cuda.is_available())
+    #     netG.cuda(gpu_ids[0])
     netG.apply(weights_init)
     return netG
 
@@ -63,14 +63,14 @@ def define_Unet(input_nc, gpu_ids=[]):
 
 def define_UnetMask(input_nc, gpu_ids=[]):
     netG = UnetMask(input_nc, output_nc=4)
-    netG.cuda(gpu_ids[0])
+    # netGself.to_cuda.cuda(gpu_ids[0])
     netG.apply(weights_init)
     return netG
 
 
 def define_Refine(input_nc, output_nc, gpu_ids=[]):
     netG = Refine(input_nc, output_nc)
-    netG.cuda(gpu_ids[0])
+    # netG.cuda(gpu_ids[0])
     netG.apply(weights_init)
     return netG
 
@@ -79,9 +79,9 @@ def define_D(input_nc, ndf, n_layers_D, norm='instance', use_sigmoid=False, num_
     norm_layer = get_norm_layer(norm_type=norm)
     netD = MultiscaleDiscriminator(input_nc, ndf, n_layers_D, norm_layer, use_sigmoid, num_D, getIntermFeat)
     # print(netD)
-    if len(gpu_ids) > 0:
-        assert (torch.cuda.is_available())
-        netD.cuda(gpu_ids[0])
+    # if len(gpu_ids) > 0:
+    #     assert (torch.cuda.is_available())
+    #     netD.cuda(gpu_ids[0])
     netD.apply(weights_init)
     return netD
 
@@ -195,7 +195,7 @@ class GANLoss(nn.Module):
 
 
 class VGGLossWarp(nn.Module):
-    def __init__(self, gpu_ids):
+    def __init__(self):
         super(VGGLossWarp, self).__init__()
         self.vgg = Vgg19().cuda()
         self.criterion = nn.L1Loss()
@@ -209,7 +209,7 @@ class VGGLossWarp(nn.Module):
 
 
 class VGGLoss(nn.Module):
-    def __init__(self, gpu_ids):
+    def __init__(self):
         super(VGGLoss, self).__init__()
         self.vgg = Vgg19().cuda()
         self.criterion = nn.L1Loss()
@@ -230,7 +230,7 @@ class VGGLoss(nn.Module):
 
 
 class StyleLoss(nn.Module):
-    def __init__(self, gpu_ids):
+    def __init__(self):
         super(StyleLoss, self).__init__()
         self.vgg = Vgg19().cuda()
         self.weights = [1.0 / 32, 1.0 / 16, 1.0 / 8, 1.0 / 4, 1.0]
@@ -722,7 +722,7 @@ class Refine(nn.Module):
                                      nn.Conv2d(64, output_nc, kernel_size=3, stride=1, padding=1)
                                      ])
 
-    def refine(self, input):
+    def forward(self, input):
         conv1 = self.conv1(input)
         pool1 = self.pool1(conv1)
 

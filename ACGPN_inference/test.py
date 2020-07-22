@@ -12,7 +12,7 @@ from torch.autograd import Variable
 from tensorboardX import SummaryWriter
 import cv2
 
-# from util.SSIM import SSIM
+from util.debug import ImageDebugger
 
 SIZE = 320
 NC = 14
@@ -87,8 +87,6 @@ img_dir = os.path.join(save_dir, 'img')
 if not os.path.exists(img_dir):
     os.makedirs(img_dir)
 
-# opt.isTrain = False
-# opt = TestOptions().parse(save=False)
 iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
 if opt.continue_train:
     try:
@@ -104,7 +102,13 @@ if opt.debug:
     opt.print_freq = 1
     opt.niter = 1
     opt.niter_decay = 0
-    opt.max_dataset_size = 10
+    opt.nThread = 1
+    # import pdb
+    # pdb.set_trace()
+
+debugger = ImageDebugger(opt)
+# if not os.path.exists('debug_img'):
+#     os.makedirs('debug_img')
 
 data_loader = CreateDataLoader(opt)
 dataset = data_loader.load_data()
@@ -148,50 +152,39 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         ############## Forward Pass ######################
         with torch.no_grad():
-            losses, fake_image, real_cloth, input_label, L1_loss, style_loss, clothes_mask, CE_loss, rgb, alpha = \
+            fake_image, real_image, real_cloth, cloth_gt, cloth_warp, \
+                fake_label, clothes_mask = \
                 model(Variable(data['label'].cuda()), Variable(data['edge'].cuda()),
                       Variable(img_fore.cuda()), Variable(mask_clothes.cuda()),
                       Variable(data['color'].cuda()), Variable(all_clothes_label.cuda()),
                       Variable(data['image'].cuda()), Variable(data['pose'].cuda()),
-                      Variable(data['image'].cuda()), Variable(mask_fore.cuda()))
+                      Variable(data['image'].cuda()), Variable(mask_fore.cuda()),
+                      data['name'], debugger)
+
+        ############## Display results and errors ##########
 
         ### display output images
-        a = generate_label_color(generate_label_plain(input_label)).float().cuda()
+        a = generate_label_color(generate_label_plain(fake_label)).float().cuda()
         b = real_cloth.float().cuda()
         c = fake_image.float().cuda()
         d = torch.cat([clothes_mask, clothes_mask, clothes_mask], 1)
-        combine = torch.cat([a[0], d[0], b[0], c[0], rgb[0]], 2).squeeze()
+        combine = torch.cat([a[0], d[0], b[0], c[0], real_image[0]], 2).squeeze()
         # combine=c[0].squeeze()
         cv_img = (combine.permute(1, 2, 0).detach().cpu().numpy()+1) / 2
         fake_img_cv = (fake_image[0].permute(1, 2, 0).detach().cpu().numpy() + 1) / 2
         if step % 1 == 0 and not opt.no_img:
-            rgb = (cv_img*255).astype(np.uint8)
+            real_image = (cv_img*255).astype(np.uint8)
             fake_rgb = (fake_img_cv*255).astype(np.uint8)
 
-            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            bgr = cv2.cvtColor(real_image, cv2.COLOR_RGB2BGR)
             fake_bgr = cv2.cvtColor(fake_rgb, cv2.COLOR_RGB2BGR)
             n = str(step)+'.jpg'
-            # cv2.imwrite('sample/'+data['name'][0],bgr)
-
             cv2.imwrite(img_dir + '/combine_' + data['name'][0], bgr)
             cv2.imwrite(img_dir + '/' + data['name'][0], fake_bgr)
-        # ssim_single = SSIM_cal(fake_image, data['image'].cuda())
-        # SSIM_accu += ssim_single
         step += 1
         print(step)
-        ### save latest model
-        if total_steps % opt.save_latest_freq == save_delta:
-            # print('saving the latest model (epoch %d, total_steps %d)' % (epoch, total_steps))
-            # model.module.save('latest')
-            # np.savetxt(iter_path, (epoch, epoch_iter), delimiter=',', fmt='%d')
-            pass
         if epoch_iter >= dataset_size:
             break
-
-    # with open(os.path.join(save_dir, 'SSIM.txt'), 'w') as file:
-    #     print('total step: ', step, 'SSIM_accu: ', SSIM_accu, 'SSIM_avg:', SSIM_accu / step)
-    #     file.write(str(float(SSIM_accu / step)))
-    #     file.write('\n')
 
     # end of epoch
     iter_end_time = time.time()
