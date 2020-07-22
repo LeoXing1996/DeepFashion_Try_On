@@ -15,4 +15,9 @@ Data_preprocessing/
 */sample/*
 ACGPN_inference/debug_img/
 
+# ignore script file
+!*/script/ls_running.sh
+!*/script/kill_exp.sh
+*/script/*.sh
+
 landmark/
