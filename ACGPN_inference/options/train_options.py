@@ -34,4 +34,13 @@ class TrainOptions(BaseOptions):
 
         self.parser.add_argument('--no_img', action='store_true', help='save generate images')
 
+        # options for evaluation
+        self.parser.add_argument('--eval_inception', action='store_true')
+        self.parser.add_argument('--splits', type=int, default=1, help='split for Inception Score')
+        self.parser.add_argument('--out_num', type=int, default=1000, help='output number of Inception V3 network')
+
+        self.parser.add_argument('--eval_ssim', action='store_true')
+        self.parser.add_argument('--window_size', type=int, default=11)
+        self.parser.add_argument('--size_average', type=bool, default=True)
+        self.parser.add_argument('--channel', type=int, default=3)
         self.isTrain = True
