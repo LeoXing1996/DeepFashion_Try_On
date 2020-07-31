@@ -3,6 +3,7 @@
 import torch.utils.data as data
 from PIL import Image
 import torchvision.transforms as transforms
+from skimage.transform import rescale
 import numpy as np
 import random
 import ipdb
@@ -66,6 +67,21 @@ def get_transform(opt, params, method=Image.BICUBIC, normalize=True):
     return transforms.Compose(transform_list)
 
 
+def get_PAF_transform():
+    transform_list = []
+    # here we default to the standard case
+    #   opt.resize_or_crop == 'scale_width'
+    # PAF is a np array, we want to
+    # 1. resize this ndarray and
+    # 2. call `ToTensor` --> this function can only provide a `DoubleTensor` output with
+    #                        respect to the input data type
+    #                        we need to call type(torch.FloatTensor) manually in get_item
+    target_width = 192
+    transform_list.append(transforms.Lambda(lambda arr: __scale_width_ndarray(arr, target_width)))
+    transform_list.append(transforms.ToTensor())
+    return transforms.Compose(transform_list)
+
+
 def normalize():
     return transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 
@@ -101,3 +117,67 @@ def __flip(img, flip):
     if flip:
         return img.transpose(Image.FLIP_LEFT_RIGHT)
     return img
+
+
+def __scale_width_ndarray(arr, target_width):
+    oh, ow = arr.shape[:2]
+    if ow == target_width:
+        return arr
+    target_scale = target_width / ow
+    return rescale(arr, target_scale, multichannel=True)
+
+
+# limbs vector for PAF--> TODO: get only PAFs related to upper points
+def kp_connections(keypoints, only_upper=False):
+    kp_lines = [
+        [keypoints.index('neck'), keypoints.index('right_shoulder')],
+        [keypoints.index('right_shoulder'), keypoints.index('right_elbow')],
+        [keypoints.index('right_elbow'), keypoints.index('right_wrist')],
+        [keypoints.index('right_shoulder'), keypoints.index('right_eye')],
+        [keypoints.index('neck'), keypoints.index('left_shoulder')],
+        [keypoints.index('left_shoulder'), keypoints.index('left_elbow')],
+        [keypoints.index('left_elbow'), keypoints.index('left_wrist')],
+        [keypoints.index('left_shoulder'), keypoints.index('left_eye')],
+        [keypoints.index('neck'), keypoints.index('nose')],
+        [keypoints.index('nose'), keypoints.index('right_eye')],
+        [keypoints.index('nose'), keypoints.index('left_eye')],
+        [keypoints.index('right_eye'), keypoints.index('right_ear')],
+        [keypoints.index('left_eye'), keypoints.index('left_ear')]
+    ]
+    if not only_upper:  # add pafs with respect of lower bodys
+        kp_lines += [
+            [keypoints.index('neck'), keypoints.index('right_hip')],
+            [keypoints.index('right_hip'), keypoints.index('right_knee')],
+            [keypoints.index('right_knee'), keypoints.index('right_ankle')],
+            [keypoints.index('neck'), keypoints.index('left_hip')],
+            [keypoints.index('left_hip'), keypoints.index('left_knee')],
+            [keypoints.index('left_knee'), keypoints.index('left_ankle')],
+        ]
+    return kp_lines
+
+
+def get_keypoints():
+    """Get the COCO keypoints and their left/right flip coorespondence map."""
+    # Keypoints are not available in the COCO json for the test split, so we
+    # provide them here.
+    keypoints = [
+        'nose',
+        'neck',
+        'right_shoulder',
+        'right_elbow',
+        'right_wrist',
+        'left_shoulder',
+        'left_elbow',
+        'left_wrist',
+        'right_hip',
+        'right_knee',
+        'right_ankle',
+        'left_hip',
+        'left_knee',
+        'left_ankle',
+        'right_eye',
+        'left_eye',
+        'right_ear',
+        'left_ear']
+
+    return keypoints

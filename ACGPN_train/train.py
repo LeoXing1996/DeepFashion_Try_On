@@ -120,7 +120,6 @@ def main():
     os.makedirs('sample', exist_ok=True)
     opt = TrainOptions().parse()
     rank = opt.local_rank
-    print(rank)
     MAIN_DEVICE = rank is None or rank == 0
     handle_DDP(rank)
     torch.backends.cudnn.benchmark = True
@@ -142,13 +141,6 @@ def main():
         print('Resuming from epoch %d at iteration %d' % (start_epoch, epoch_iter))
     else:
         start_epoch, epoch_iter = 1, 0
-
-    # if opt.debug:
-    #     opt.display_freq = 1
-    #     opt.print_freq = 1
-    #     opt.niter = 1
-    #     opt.niter_decay = 0
-    #     opt.max_dataset_size = 10
 
     data_loader = CreateDataLoader(opt, rank)
     dataset = data_loader.load_data()
@@ -172,7 +164,6 @@ def main():
             epoch_iter = epoch_iter % dataset_size
 
         for i, data in enumerate(dataset, start=epoch_iter):
-            #ipdb.set_trace()
             iter_start_time = time.time()
 
             total_steps += opt.batchSize
@@ -193,7 +184,7 @@ def main():
                                                 Variable(img_fore.cuda()), Variable(mask_clothes.cuda()),
                                                 Variable(data['color'].cuda()), Variable(all_clothes_label.cuda()),
                                                 Variable(data['image'].cuda()), Variable(data['pose'].cuda()),
-                                                Variable(data['mask'].cuda()))
+                                                Variable(data['pafs'].cuda()), Variable(data['mask'].cuda()))
 
             # sum per device losses
             losses = [torch.mean(x) if not isinstance(x, int) else x for x in losses]

@@ -9,6 +9,9 @@ import json
 import numpy as np
 import os.path as osp
 from PIL import ImageDraw
+from data.base_dataset import get_keypoints, kp_connections
+from data.base_dataset import get_PAF_transform
+from data.paf import my_PAF_release
 # import ipdb
 
 
@@ -17,6 +20,9 @@ class AlignedDataset(BaseDataset):
         self.opt = opt
         self.root = opt.dataroot
         self.diction = {}
+        self.LIMB_IDS = kp_connections(get_keypoints(), opt.pafs_upper)
+        self.paf_length = len(self.LIMB_IDS)
+
         ### input A (label maps)
         if opt.isTrain or opt.use_encoded_image:
             dir_A = '_A' if self.opt.label_nc == 0 else '_label'
@@ -104,15 +110,21 @@ class AlignedDataset(BaseDataset):
                     else:
                         self.diction[name].append(d)
 
+    def getPAF(self, pose):
+        pafs = np.zeros((self.fine_height, self.fine_width, self.paf_length * 2))
+        for i, (k1, k2) in enumerate(self.LIMB_IDS):
+            vis_1, vis_2 = pose[k1, 2], pose[k2, 2]
+            if vis_1 == 0 or vis_2 == 0:
+                continue
+
+            centerA, centerB = pose[k1, :2], pose[k2, :2]
+            pafs[:, :, 2*i: 2*i+2] = my_PAF_release(
+                centerA, centerB,
+                height=self.fine_height, width=self.fine_width)
+        return pafs
+
     def __getitem__(self, index):
-        # train_mask = 9600
-        ### input A (label maps)
-        # box=[]
-        # for k,x in enumerate(self.A_paths):
-        #     if '2372656' in x :
-        #         box.append(k)
-        # index=box[np.random.randint(len(box))]
-        test = index  #np.random.randint(10000)
+        test = index
         A_path = self.A_paths[index]
         AR_path = self.AR_paths[index]
         A = Image.open(A_path).convert('L')
@@ -127,7 +139,22 @@ class AlignedDataset(BaseDataset):
             transform_A = get_transform(self.opt, params, method=Image.NEAREST, normalize=False)
             A_tensor = transform_A(A) * 255.0
             AR_tensor = transform_A(AR) * 255.0
-        B_tensor = inst_tensor = feat_tensor = 0
+        '''
+        transform_A = {
+            lambda : __scale_width(img, 512)
+            Resize (256, 192, NEAREST)
+            lambda : flip
+            ToTensor()
+        }
+        transform_B = {
+            lambda : __scale_width(img, 512) [192, 256] --> [512, 682]
+            Resize(256, 192, BICUBIC)
+            lambda : flip
+            Normalize(mean=0.5, std=0.5)
+            ToTensor()
+        }
+        '''
+        B_tensor = 0
         ### input B (real images)
         B_path = self.B_paths[index]
         BR_path = self.BR_paths[index]
@@ -138,14 +165,14 @@ class AlignedDataset(BaseDataset):
         BR_tensor = transform_B(BR)
 
         ### input M (masks)
-        M_path = self.M_paths[np.random.randint(12000)]
+        # M_path = self.M_paths[np.random.randint(12000)]
         MR_path = self.MR_paths[np.random.randint(12000)]
-        M = Image.open(M_path).convert('L')
+        # M = Image.open(M_path).convert('L')
         MR = Image.open(MR_path).convert('L')
         M_tensor = transform_A(MR)
 
         ### input_MC (colorMasks)
-        MC_path = B_path  #self.MC_paths[1]
+        # MC_path = B_path  #self.MC_paths[1]
         MCR_path = B_path  #self.MCR_paths[1]
         MCR = Image.open(MCR_path).convert('L')
         MC_tensor = transform_A(MCR)
@@ -189,12 +216,19 @@ class AlignedDataset(BaseDataset):
             one_map = transform_B(one_map.convert('RGB'))
             pose_map[i] = one_map[0]
         P_tensor = pose_map
+
+        # PAF
+        pafs = self.getPAF(pose_data)
+        transform_paf = get_PAF_transform()
+        pafs_ten = transform_paf(pafs).type(torch.FloatTensor)
+
         if self.opt.isTrain:
             input_dict = {'label': A_tensor, 'label_ref': AR_tensor,
                           'image': B_tensor, 'image_ref': BR_tensor,
                           'path': A_path, 'path_ref': AR_path,
                           'edge': E_tensor, 'color': C_tensor,
-                          'mask': M_tensor, 'colormask': MC_tensor, 'pose': P_tensor}
+                          'mask': M_tensor, 'colormask': MC_tensor,
+                          'pose': P_tensor, 'pafs': pafs_ten}
         else:
             input_dict = {'label': A_tensor, 'label_ref': AR_tensor,
                           'image': B_tensor, 'image_ref': BR_tensor,

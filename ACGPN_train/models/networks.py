@@ -78,10 +78,6 @@ def define_Refine(input_nc, output_nc, gpu_ids=[]):
 def define_D(input_nc, ndf, n_layers_D, norm='instance', use_sigmoid=False, num_D=1, getIntermFeat=False, gpu_ids=[]):
     norm_layer = get_norm_layer(norm_type=norm)
     netD = MultiscaleDiscriminator(input_nc, ndf, n_layers_D, norm_layer, use_sigmoid, num_D, getIntermFeat)
-    # print(netD)
-    # if len(gpu_ids) > 0:
-    #     assert (torch.cuda.is_available())
-    #     netD.cuda(gpu_ids[0])
     netD.apply(weights_init)
     return netD
 
@@ -520,7 +516,6 @@ class UnetMask(nn.Module):
         # mask:  pre_clothes_mask
         input, warped_mask, rx, ry, cx, cy, rg, cg = \
             self.stn(input, torch.cat([mask, refer, input], 1), mask)
-        #ipdb.set_trace()# print(input.shape)
 
         conv1 = self.conv1(torch.cat([refer.detach(), input.detach()], 1))
         pool1 = self.pool1(conv1)
@@ -1134,6 +1129,8 @@ class StyleEncoder(nn.Module):
         self.sft2 = SFTLayer()
 
     def forward(self, x):
+        # x: (image_ref, fea1, fea2)
+        #   `fea1` and `fea2` are from enc_lable
         fea = self.model(x[0])
         fea = self.sft1((fea, x[1]))
         fea = self.model_middle(fea)

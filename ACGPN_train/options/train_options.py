@@ -43,6 +43,12 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--refinedCloth', type=float, default=10)
         self.parser.add_argument('--e2eContent', action='store_true', default=False, help='end2end training of content fusion module')
 
+        # for pafs input --> Unet (Warping Network) is not applied to pafs (temp)
+        self.parser.add_argument('--pafs_upper', action='store_true', help='only use upper PAFs')
+        self.parser.add_argument('--pafs_G1', action='store_true', help='pafs to G1 (semantic mask)')
+        self.parser.add_argument('--pafs_G2', action='store_true', help='pafs to G2 (predicted clothes mask)')
+        self.parser.add_argument('--pafs_Content', action='store_true', help='pafs to G / content fusion module')
+
         # for pytorch DDP
         self.parser.add_argument('--local_rank', default=None, type=int,
                                  help='node rank for distributed training')

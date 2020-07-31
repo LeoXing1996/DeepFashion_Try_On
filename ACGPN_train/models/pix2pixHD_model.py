@@ -42,6 +42,25 @@ def generate_discrete_label(inputs, label_nc, onehot=True, encode=True):
     return input_label
 
 
+# TODO: what does this function do ?
+def morpho(mask, iter, bigger=True):
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    new = []
+    for i in range(len(mask)):
+        tem = mask[i].cpu().detach().numpy().squeeze().reshape(256, 192, 1)*255
+        tem = tem.astype(np.uint8)
+        if bigger:
+            tem = cv2.dilate(tem, kernel, iterations=iter)
+        else:
+            tem = cv2.erode(tem, kernel, iterations=iter)
+        tem = tem.astype(np.float64)
+        tem = tem.reshape(1, 256, 192)
+        new.append(tem.astype(np.float64)/255.0)
+    new = np.stack(new)
+    new = torch.FloatTensor(new).cuda()
+    return new
+
+
 def encode(label_map, size):
     label_nc = 14
     oneHot_size = (size[0], label_nc, size[2], size[3])
@@ -127,11 +146,27 @@ class Pix2PixHDModel(BaseModel):
         # input_nc = opt.label_nc if opt.label_nc != 0 else opt.input_nc
         self.count = 0
         self.perm = torch.randperm(1024*4)
+
+        paf_chns = 26 if opt.pafs_upper else 38
+        G1_in_ch, G2_in_ch, G_in_ch = 37, 37, 24
+        if opt.pafs_G1:
+            G1_in_ch += paf_chns
+        if opt.pafs_G2:
+            G2_in_ch += paf_chns
+        if opt.pafs_Content:
+            G_in_ch += paf_chns
+
         ##### define networks
         self.Unet = self.to_cuda(networks.define_UnetMask(4, self.gpu_ids))
-        self.G1 = self.to_cuda(networks.define_Refine(37, 14, self.gpu_ids))
-        self.G2 = self.to_cuda(networks.define_Refine(19+18, 1, self.gpu_ids))
-        self.G = self.to_cuda(networks.define_Refine(24, 3, self.gpu_ids))
+        # G1_in: [pre_clothes_mask, clothes, all_clothes_label, pose, self.gen_noise(shape)]
+        # channels: [1,                3,           14,           18,       1] = 37
+        self.G1 = self.to_cuda(networks.define_Refine(G1_in_ch, 14, self.gpu_ids))
+        # G2_in: [pre_clothes_mask, clothes, masked_label, pose, self.gen_noise(shape)]
+        # channels: [1,                3,           14,      18,        1] = 37
+        self.G2 = self.to_cuda(networks.define_Refine(G2_in_ch, 1, self.gpu_ids))
+        # G_in: [img_hole_hand, masked_label, real_image*clothes_mask, skin_color, self.gen_noise(shape)]
+        # channels: [3,               14,               3,                 3,              1]
+        self.G = self.to_cuda(networks.define_Refine(G_in_ch, 3, self.gpu_ids))
         #ipdb.set_trace()
         self.tanh = nn.Tanh()
         self.sigmoid = nn.Sigmoid()
@@ -139,14 +174,17 @@ class Pix2PixHDModel(BaseModel):
 
         # Discriminator network
         if self.isTrain:
-            # use_sigmoid = opt.no_lsgan
-            # netD_input_nc = input_nc + opt.output_nc
-            # netB_input_nc = opt.output_nc * 2
-            self.D1 = self.get_D(34+14+3, opt)
-            self.D2 = self.get_D(20+18, opt)
-            self.D = self.get_D(27, opt)
+            # D1: input_pool: G1_in                                 --> G1_in_ch
+            #     cond_pool: masked_label (real) / arm_label (fake) --> 14
+            self.D1 = self.get_D(G1_in_ch+14, opt)
+            # D2: input_pool: G2_in                                 --> G2_in_ch
+            #     cond_pool: clothes_mask (real) / fake_cl (fake)   --> 1
+            self.D2 = self.get_D(G2_in_ch+1, opt)
+            # D:  input_pool: G_in                                 --> G_in_ch
+            #     cond_pool: real_image (real) / fake_image (fake) --> 3
+            self.D = self.get_D(G_in_ch+3, opt)
+            # D3: Discriminator for Unet --> not change
             self.D3 = self.get_D(7, opt)
-            #self.netB = networks.define_B(netB_input_nc, opt.output_nc, 32, 3, 3, opt.norm, gpu_ids=self.gpu_ids)
 
         if self.opt.verbose:
             print('---------- Networks initialized -------------')
@@ -267,22 +305,11 @@ class Pix2PixHDModel(BaseModel):
         noise = np.asarray(noise / 255, dtype=np.uint8)
         noise = torch.tensor(noise, dtype=torch.float32)
         return noise.cuda()
-    #data['label'],data['edge'],img_fore.cuda()),Variable(mask_clothes, ,Variable(data['color'].cuda()),Variable(all_clothes_label.cuda()))
 
     def forward(self, label, pre_clothes_mask,
                 img_fore, clothes_mask,
                 clothes, all_clothes_label,
-                real_image, pose, mask):
-        # debug here we want to check of all tensor is on target device_ids
-        # input_dict = {'label': label, 'pre_clothes_mask': pre_clothes_mask,
-        #               'img_fore': img_fore, 'clothes_mask': clothes_mask,
-        #               'clothes': clothes, 'all_clothes_label': all_clothes_label,
-        #               'real_image': real_image, 'pose': pose, 'mask': mask}
-        # num_inputs = len(input_dict)
-        # for idx, (name, tensor) in enumerate(input_dict.items()):
-        #     info_base = 'RAND: {:d} {:2d}/{:2d}: {:15s} is on {}'
-        #     devices = tensor.device
-        #     print(info_base.format(self.rank, idx+1, num_inputs, name, devices))
+                real_image, pose, pafs, mask):
         # Some input:
         # img_fore -> foreground of `real_images`
         # clothes_mask -> target (part of `label` == 4 or cloth in real image)
@@ -304,7 +331,12 @@ class Pix2PixHDModel(BaseModel):
         # real_image=real_image * clothes_mask+(1-clothes_mask)*-1
         shape = pre_clothes_mask.shape
 
-        G1_in = torch.cat([pre_clothes_mask, clothes, all_clothes_label, pose, self.gen_noise(shape)], dim=1)
+        if self.opt.pafs_G1:
+            G1_in = torch.cat([pre_clothes_mask, clothes, all_clothes_label,
+                               pose, pafs, self.gen_noise(shape)], dim=1)
+        else:
+            G1_in = torch.cat([pre_clothes_mask, clothes, all_clothes_label,
+                               pose, self.gen_noise(shape)], dim=1)
         arm_label = self.G1(G1_in)
         arm_label = self.sigmoid(arm_label)
         CE_loss = self.cross_entropy2d(arm_label, (label * (1 - clothes_mask)).transpose(0, 1)[0].long())*10
@@ -312,7 +344,13 @@ class Pix2PixHDModel(BaseModel):
         armlabel_map = generate_discrete_label(arm_label.detach(), 14, False)
         dis_label = generate_discrete_label(arm_label.detach(), 14)
 
-        G2_in = torch.cat([pre_clothes_mask, clothes, masked_label, pose, self.gen_noise(shape)], 1)
+        if self.opt.pafs_G2:
+            G2_in = torch.cat([pre_clothes_mask, clothes, masked_label,
+                               pose, pafs, self.gen_noise(shape)], dim=1)
+        else:
+            G2_in = torch.cat([pre_clothes_mask, clothes, masked_label,
+                               pose, self.gen_noise(shape)], dim=1)
+
         fake_cl = self.G2(G2_in)
         fake_cl = self.sigmoid(fake_cl)
         CE_loss += self.BCE(fake_cl, clothes_mask)*10
@@ -354,20 +392,27 @@ class Pix2PixHDModel(BaseModel):
         if self.opt.e2eContent:
             comp_fake_c = fake_c*(1-composition_mask).unsqueeze(1) + \
                 (composition_mask.unsqueeze(1))*warped
-            G_in = torch.cat([img_hole_hand, masked_label, comp_fake_c,
-                              skin_color, self.gen_noise(shape)], 1)
+            if self.opt.pafs_Content:
+                G_in = torch.cat([img_hole_hand, masked_label, comp_fake_c,
+                                  skin_color, pafs, self.gen_noise(shape)], dim=1)
+            else:
+                G_in = torch.cat([img_hole_hand, masked_label, comp_fake_c,
+                                  skin_color, self.gen_noise(shape)], dim=1)
             fake_image = self.G(G_in)
             fake_image = self.tanh(fake_image)
         else:
             comp_fake_c = fake_c.detach()*(1-composition_mask).unsqueeze(1) + \
                 (composition_mask.unsqueeze(1))*warped.detach()
-            G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask,
-                              skin_color, self.gen_noise(shape)], 1)
+            if self.opt.pafs_Content:
+                G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask,
+                                  skin_color, pafs, self.gen_noise(shape)], dim=1)
+            else:
+                G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask,
+                                  skin_color, self.gen_noise(shape)], dim=1)
             fake_image = self.G(G_in.detach())
             fake_image = self.tanh(fake_image)
 
         ## THE POOL TO SAVE IMAGES\
-
         input_pool = [G1_in, G2_in, G_in, torch.cat([clothes_mask, clothes], 1)]        ##fake_cl_dis to replace
         #ipdb.set_trace()
         real_pool = [masked_label, clothes_mask, real_image, real_image*clothes_mask]
@@ -438,19 +483,6 @@ class Pix2PixHDModel(BaseModel):
                 fake_c, comp_fake_c, dis_label, L1_loss, style_loss, fake_cl, warped, clothes, CE_loss,
                 rx*0.1, ry*0.1, cx*0.1, cy*0.1, rg*0.1, cg*0.1]
 
-    def inference(self, label, label_ref, image_ref):
-
-        # Encode Inputs
-        image_ref = Variable(image_ref)
-        input_label, input_label_ref, real_image_ref = self.encode_input_test(Variable(label), Variable(label_ref), image_ref, infer=True)
-
-        if torch.__version__.startswith('0.4'):
-            with torch.no_grad():
-                fake_image = self.netG.forward(input_label, input_label_ref, real_image_ref)
-        else:
-            fake_image = self.netG.forward(input_label, input_label_ref, real_image_ref)
-        return fake_image
-
     def save(self, which_epoch):
         self.save_network(self.Unet, 'U', which_epoch, self.gpu_ids)
         self.save_network(self.G, 'G', which_epoch, self.gpu_ids)
@@ -462,10 +494,6 @@ class Pix2PixHDModel(BaseModel):
         self.save_network(self.D3, 'D3', which_epoch, self.gpu_ids)
         self.save_network(self.optimizer_G, 'OG', which_epoch, self.gpu_ids)
         self.save_network(self.optimizer_D, 'OD', which_epoch, self.gpu_ids)
-
-        pass
-
-        #self.save_network(self.netB, 'B', which_epoch, self.gpu_ids)
 
     def update_fixed_params(self):
         # after fixing the global generator for a number of iterations, also start finetuning it
@@ -486,9 +514,3 @@ class Pix2PixHDModel(BaseModel):
         if self.opt.verbose:
             print('update learning rate: %f -> %f' % (self.old_lr, lr))
         self.old_lr = lr
-
-
-class InferenceModel(Pix2PixHDModel):
-    def forward(self, inp):
-        label = inp
-        return self.inference(label)

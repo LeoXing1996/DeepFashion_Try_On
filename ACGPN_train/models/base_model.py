@@ -50,7 +50,10 @@ class BaseModel(torch.nn.Module):
         if self.rank is None or self.rank == 0:
             save_filename = '%s_net_%s.pth' % (epoch_label, network_label)
             save_path = os.path.join(self.save_dir, save_filename)
-            torch.save(network.state_dict(), save_path)
+            if hasattr(network, 'module'):
+                torch.save(network.module.state_dict(), save_path)
+            else:
+                torch.save(network.state_dict(), save_path)
         # if len(gpu_ids) and torch.cuda.is_available():
         #     network.cuda()
 

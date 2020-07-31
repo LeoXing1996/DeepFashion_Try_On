@@ -6,12 +6,13 @@ import ipdb
 
 def create_model(opt):
     if opt.model == 'pix2pixHD':
-        from .pix2pixHD_model import Pix2PixHDModel, InferenceModel
+        # from .pix2pixHD_model import Pix2PixHDModel, InferenceModel
+        from .pix2pixHD_model import Pix2PixHDModel
         if opt.isTrain:
             model = Pix2PixHDModel()
             #ipdb.set_trace()
-        else:
-            model = InferenceModel()
+        # else:
+        #     model = InferenceModel()
 
     model.initialize(opt, opt.local_rank)
     if opt.verbose:
