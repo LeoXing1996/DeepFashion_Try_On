@@ -1,9 +1,6 @@
-from util.SSIM import SSIM
 from util.evaluation import IncepTionScore, SSIMScore
 
-import os
 import os.path as op
-import numpy as np
 
 import torch
 from torch.utils.data import DataLoader
@@ -28,8 +25,8 @@ elif opt.eval_inception:
 with torch.no_grad():
     res_dict = eval_model.eval_dataset()
 
-save_dir = os.path.join('sample', opt.which_ckpt)
+save_dir = op.join('sample', opt.which_ckpt)
 if opt.name:
-    save_dir = os.path.join(save_dir, opt.name)
+    save_dir = op.join(save_dir, opt.name)
 
 eval_model.save_result(res_dict, save_dir)

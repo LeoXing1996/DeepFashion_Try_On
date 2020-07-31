@@ -125,7 +125,7 @@ class IncepTionScore(BaseEvaluation):
         return True
 
     def eval_dataset(self, print_output=True):
-        splits, N = self.N, self.splits
+        N, splits = self.N, self.splits
         preds = np.zeros((N, self.out_num))
         batch_size = self.batch_size
         print('Start running Inception V3 Preds.....')
