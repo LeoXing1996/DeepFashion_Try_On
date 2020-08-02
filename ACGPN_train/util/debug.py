@@ -8,9 +8,12 @@ import torch
 
 class ImageDebugger:
     def __init__(self, opt, cmap=None):
-        self.debug = opt.debug
-        self.base_dir = op.join('sample', opt.which_ckpt,
-                                opt.name, 'debug')
+        self.debug = opt.img_debugger
+        dir_list = ['sample', opt.which_ckpt, 'eval']
+        dir_list += [opt.name, 'debug'] if opt.name else ['debug']
+        self.base_dir = op.join(*dir_list)
+        # self.base_dir = op.join('sample', opt.which_ckpt,
+        #                         opt.name, 'debug')
         self.img_name = None
         # color map for label
         CMAP = 'tab20' if cmap is None else cmap

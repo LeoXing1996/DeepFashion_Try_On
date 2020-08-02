@@ -3,8 +3,8 @@ from __future__ import print_function
 import torch
 import numpy as np
 from PIL import Image
-import numpy as np
 import os
+
 
 # Converts a Tensor into a Numpy array
 # |imtype|: the desired type of the converted numpy array
@@ -26,6 +26,7 @@ def tensor2im(image_tensor, imtype=np.uint8, normalize=True):
 
     return image_numpy
 
+
 # Converts a one-hot tensor into a colorful label map
 def tensor2label(label_tensor, n_label, imtype=np.uint8):
     if n_label == 0:
@@ -40,9 +41,11 @@ def tensor2label(label_tensor, n_label, imtype=np.uint8):
 
     return label_numpy
 
+
 def save_image(image_numpy, image_path):
     image_pil = Image.fromarray(image_numpy)
     image_pil.save(image_path)
+
 
 def mkdirs(paths):
     if isinstance(paths, list) and not isinstance(paths, str):
@@ -51,9 +54,11 @@ def mkdirs(paths):
     else:
         mkdir(paths)
 
+
 def mkdir(path):
     if not os.path.exists(path):
         os.makedirs(path)
+
 
 ###############################################################################
 # Code from
@@ -63,6 +68,7 @@ def mkdir(path):
 def uint82bin(n, count=8):
     """returns the binary of integer n, count refers to amount of bits"""
     return ''.join([str((n >> y) & 1) for y in range(count-1, -1, -1)])
+
 
 def labelcolormap(N):
     if N == 35: # cityscape
@@ -87,6 +93,7 @@ def labelcolormap(N):
             cmap[i, 1] = g
             cmap[i, 2] = b
     return cmap
+
 
 class Colorize(object):
     def __init__(self, n=35):

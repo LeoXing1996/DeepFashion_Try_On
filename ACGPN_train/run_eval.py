@@ -25,7 +25,7 @@ elif opt.eval_inception:
 with torch.no_grad():
     res_dict = eval_model.eval_dataset()
 
-save_dir = op.join('sample', opt.which_ckpt)
+save_dir = op.join('sample', opt.which_ckpt, 'eval')
 if opt.name:
     save_dir = op.join(save_dir, opt.name)
 

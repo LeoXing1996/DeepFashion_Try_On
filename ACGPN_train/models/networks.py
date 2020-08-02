@@ -510,13 +510,16 @@ class UnetMask(nn.Module):
                                      nn.Conv2d(64, output_nc, kernel_size=3, stride=1, padding=1)
                                      ])
 
-    def forward(self, input, refer, mask):
+    def forward(self, input, refer, mask, grid=None):
         # input: clothes
         # refer: clothes_mask
         # mask:  pre_clothes_mask
-        input, warped_mask, rx, ry, cx, cy, rg, cg = \
-            self.stn(input, torch.cat([mask, refer, input], 1), mask)
-
+        if grid is not None:
+            input, warped_mask, rx, ry, cx, cy, grid = \
+                self.stn(input, torch.cat([mask, refer, input], 1), mask, grid)
+        else:
+            input, warped_mask, rx, ry, cx, cy, rg, cg = \
+                self.stn(input, torch.cat([mask, refer, input], 1), mask)
         conv1 = self.conv1(torch.cat([refer.detach(), input.detach()], 1))
         pool1 = self.pool1(conv1)
 
@@ -544,7 +547,10 @@ class UnetMask(nn.Module):
 
         up9 = self.up9(conv8)
         conv9 = self.conv9(torch.cat([conv1, up9], 1))
-        return conv9, input, warped_mask, rx, ry, cx, cy, rg, cg
+        if grid is not None:
+            return conv9, input, warped_mask, grid
+        else:
+            return conv9, input, warped_mask, rx, ry, cx, cy, rg, cg
 
 
 class Unet(nn.Module):
@@ -1508,17 +1514,17 @@ class BoundedGridLocNet(nn.Module):
         self.cnn.fc2.bias.data.copy_(bias)
         self.cnn.fc2.weight.data.zero_()
 
-    def forward(self, x):
+    def forward(self, x, isTrain=True):
         batch_size = x.size(0)
         points = F.tanh(self.cnn(x))
-        #ipdb.set_trace()
         coor = points.view(batch_size, -1, 2)
         row = self.get_row(coor, 5)
         col = self.get_col(coor, 5)
-        rg_loss = sum(self.grad_row(coor, 5))
-        cg_loss = sum(self.grad_col(coor, 5))
-        rg_loss = torch.max(rg_loss, torch.tensor(0.02).cuda())
-        cg_loss = torch.max(cg_loss, torch.tensor(0.02).cuda())
+        if isTrain:
+            rg_loss = sum(self.grad_row(coor, 5))
+            cg_loss = sum(self.grad_col(coor, 5))
+            rg_loss = torch.max(rg_loss, torch.tensor(0.02).cuda())
+            cg_loss = torch.max(cg_loss, torch.tensor(0.02).cuda())
         rx, ry, cx, cy = torch.tensor(0.08).cuda(), torch.tensor(0.08).cuda(), \
             torch.tensor(0.08).cuda(), torch.tensor(0.08).cuda()
         row_x, row_y = row[:, :, 0], row[:, :, 1]
@@ -1527,8 +1533,10 @@ class BoundedGridLocNet(nn.Module):
         ry_loss = torch.max(ry, row_y).mean()
         cx_loss = torch.max(cx, col_x).mean()
         cy_loss = torch.max(cy, col_y).mean()
-
-        return coor, rx_loss, ry_loss, cx_loss, cy_loss, rg_loss, cg_loss
+        if isTrain:
+            return coor, rx_loss, ry_loss, cx_loss, cy_loss, rg_loss, cg_loss
+        else:
+            return coor, rx_loss, ry_loss, cx_loss, cy_loss
 
     def get_row(self, coor, num):
         sec_dic = []
@@ -1623,7 +1631,6 @@ class STNNet(nn.Module):
             np.arange(-r1, r1 + 0.00001, 2.0 * r1 / (grid_size_h - 1)),
             np.arange(-r2, r2 + 0.00001, 2.0 * r2 / (grid_size_w - 1)),
         )))
-        #ipdb.set_trace()
         Y, X = target_control_points.split(1, dim=1)
         target_control_points = torch.cat([X, Y], dim=1)
         # self.get_row(target_control_points,5)
@@ -1660,7 +1667,7 @@ class STNNet(nn.Module):
             flag = False
             max = -1
             for j in range(num - 1):
-                differ = (coor[ (j + 1) * num + i, :] - coor[j * num + i, :]) ** 2
+                differ = (coor[(j + 1) * num + i, :] - coor[j * num + i, :]) ** 2
                 if not flag:
                     second_dif = 0
                     flag = True
@@ -1671,9 +1678,12 @@ class STNNet(nn.Module):
                 sum += second_dif
             print(sum)
 
-    def forward(self, x, reference, mask):
+    def forward(self, x, reference, mask, grid_pic=None):
         batch_size = x.size(0)
-        source_control_points, rx, ry, cx, cy, rg, cg = self.loc_net(reference)
+        if grid_pic is not None:  # grid_pic is not None means test mode
+            source_control_points, rx, ry, cx, cy = self.loc_net(reference, isTrain=False)
+        else:
+            source_control_points, rx, ry, cx, cy, rg, cg = self.loc_net(reference)
         source_control_points = (source_control_points)
         # print('control points',source_control_points.shape)
         source_coordinate = self.tps(source_control_points)
@@ -1681,4 +1691,8 @@ class STNNet(nn.Module):
         # print('grid size',grid.shape)
         transformed_x = grid_sample(x, grid, canvas=0)
         warped_mask = grid_sample(mask, grid, canvas=0)
-        return transformed_x, warped_mask, rx, ry, cx, cy, rg, cg
+        if grid_pic is not None:
+            warped_gpic = grid_sample(grid_pic, grid, canvas=0)
+            return transformed_x, warped_mask, rx, ry, cx, cy, warped_gpic
+        else:
+            return transformed_x, warped_mask, rx, ry, cx, cy, rg, cg

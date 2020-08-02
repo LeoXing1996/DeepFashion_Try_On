@@ -17,7 +17,7 @@ class CustomDatasetDataLoader(BaseDataLoader):
     def name(self):
         return 'CustomDatasetDataLoader'
 
-    def initialize(self, opt, rank):
+    def initialize(self, opt, rank=None):
         BaseDataLoader.initialize(self, opt)
         self.dataset = CreateDataset(opt)
         # specific parameters for DDP

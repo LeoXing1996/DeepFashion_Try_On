@@ -157,6 +157,7 @@ class AlignedDataset(BaseDataset):
         B_tensor = 0
         ### input B (real images)
         B_path = self.B_paths[index]
+        name = B_path.split('/')[-1]
         BR_path = self.BR_paths[index]
         B = Image.open(B_path).convert('RGB')
         BR = Image.open(BR_path).convert('RGB')
@@ -190,7 +191,9 @@ class AlignedDataset(BaseDataset):
         E_tensor = transform_A(E)
 
         ##Pose
-        pose_name = B_path.replace('.png', '_keypoints.json').replace('.jpg', '_keypoints.json').replace('train_img', 'train_pose')
+        img_dir = self.opt.phase + '_img'
+        pose_dir = self.opt.phase + '_pose'
+        pose_name = B_path.replace('.png', '_keypoints.json').replace('.jpg', '_keypoints.json').replace(img_dir, pose_dir)
         with open(osp.join(pose_name), 'r') as f:
             pose_label = json.load(f)
             try:
@@ -228,7 +231,7 @@ class AlignedDataset(BaseDataset):
                           'path': A_path, 'path_ref': AR_path,
                           'edge': E_tensor, 'color': C_tensor,
                           'mask': M_tensor, 'colormask': MC_tensor,
-                          'pose': P_tensor, 'pafs': pafs_ten}
+                          'pose': P_tensor, 'pafs': pafs_ten, 'name': name}
         else:
             input_dict = {'label': A_tensor, 'label_ref': AR_tensor,
                           'image': B_tensor, 'image_ref': BR_tensor,

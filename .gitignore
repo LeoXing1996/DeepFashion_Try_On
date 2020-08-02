@@ -16,6 +16,7 @@ Data_preprocessing/
 # ignore script file
 !*/script/ls_running.sh
 !*/script/kill_exp.sh
-*/script/*.sh
+*/script/train/
+*/script/eval/
 
 landmark/

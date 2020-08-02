@@ -1,7 +1,7 @@
 from data.custom_dataset_data_loader import CustomDatasetDataLoader
 
 
-def CreateDataLoader(opt, rank):
+def CreateDataLoader(opt, rank=None):
     data_loader = CustomDatasetDataLoader()
     # print(data_loader.name())
     data_loader.initialize(opt, rank)

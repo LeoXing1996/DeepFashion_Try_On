@@ -14,7 +14,7 @@ class SSIMDataset(Dataset):
     def __init__(self, opt):
         self.dataroot = opt.dataroot
         self.phase = opt.phase
-        self.save_dir = op.join('sample', opt.which_ckpt)
+        self.save_dir = op.join('sample', opt.which_ckpt, 'eval')
         if opt.name:
             self.save_dir = op.join(self.save_dir, opt.name)
         self.img_dir = op.join(self.save_dir, 'img')
@@ -47,7 +47,7 @@ class InceptionDataset(Dataset):
     def __init__(self, opt):
         self.dataroot = opt.dataroot
         self.phase = opt.phase
-        self.save_dir = op.join('sample', opt.which_ckpt)
+        self.save_dir = op.join('sample', opt.which_ckpt, 'eval')
         if opt.name:
             self.save_dir = op.join(self.save_dir, opt.name)
         self.img_dir = op.join(self.save_dir, 'img')
