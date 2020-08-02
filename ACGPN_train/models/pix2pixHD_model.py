@@ -5,6 +5,7 @@ import torch
 import os
 from torch.autograd import Variable
 from util.image_pool import ImagePool
+from util.debug import ImageDebugger
 import torch.nn as nn
 
 import cv2
@@ -514,3 +515,161 @@ class Pix2PixHDModel(BaseModel):
         if self.opt.verbose:
             print('update learning rate: %f -> %f' % (self.old_lr, lr))
         self.old_lr = lr
+
+
+class InferenceModel(Pix2PixHDModel):
+    def name(self):
+        return 'InferenceModel'
+
+    def initialize(self, opt):
+        BaseModel.initialize(self, opt, None)
+        self.isTrain = True  # temply fix isTrain as True
+        self.count = 0
+        self.debugger = ImageDebugger(opt)
+
+        paf_chns = 26 if opt.pafs_upper else 38
+        G1_in_ch, G2_in_ch, G_in_ch = 37, 37, 24
+        if opt.pafs_G1:
+            G1_in_ch += paf_chns
+        if opt.pafs_G2:
+            G2_in_ch += paf_chns
+        if opt.pafs_Content:
+            G_in_ch += paf_chns
+        ##### define networks
+        with torch.no_grad():
+            self.Unet = self.to_cuda(networks.define_UnetMask(4, self.gpu_ids)).eval()
+            self.G1 = self.to_cuda(networks.define_Refine(G1_in_ch, 14, self.gpu_ids)).eval()
+            self.G2 = self.to_cuda(networks.define_Refine(G2_in_ch, 1, self.gpu_ids)).eval()
+            self.G = self.to_cuda(networks.define_Refine(G_in_ch, 3, self.gpu_ids)).eval()
+
+        self.tanh = nn.Tanh()
+        self.sigmoid = nn.Sigmoid()
+        self.BCE = torch.nn.BCEWithLogitsLoss()
+
+        if self.opt.verbose:
+            print('---------- Networks initialized -------------')
+
+        # load networks
+        pretrained_path = os.path.join(opt.ckpt_base, opt.which_ckpt)
+        self.load_network(self.Unet, 'U', opt.which_epoch, pretrained_path)
+        self.load_network(self.G1, 'G1', opt.which_epoch, pretrained_path)
+        self.load_network(self.G2, 'G2', opt.which_epoch, pretrained_path)
+        self.load_network(self.G, 'G', opt.which_epoch, pretrained_path)
+
+    def update_debugger(forward_func):
+        def update(*args):
+            print(args[-2])
+            name = args[-2]
+            args[0].debugger.set_img_name(name)
+            return forward_func(*args)
+        return update
+
+    @update_debugger
+    def forward(self, label, pre_clothes_mask,
+                img_fore, clothes_mask,
+                clothes, all_clothes_label,
+                real_image, pose,
+                grid, mask_fore, pafs, name, debugger):
+        input_label, masked_label, all_clothes_label = self.encode_input(label, clothes_mask, all_clothes_label)
+        arm1_mask = torch.FloatTensor((label.cpu().numpy() == 11).astype(np.float)).cuda()
+        arm2_mask = torch.FloatTensor((label.cpu().numpy() == 13).astype(np.float)).cuda()
+        pre_clothes_mask = torch.FloatTensor((pre_clothes_mask.detach().cpu().numpy() > 0.5).astype(np.float)).cuda()
+        clothes = clothes * pre_clothes_mask
+
+        shape = pre_clothes_mask.shape
+
+        if self.opt.pafs_G1:
+            G1_in = torch.cat([pre_clothes_mask, clothes, all_clothes_label,
+                               pose, pafs, self.gen_noise(shape)], dim=1)
+        else:
+            G1_in = torch.cat([pre_clothes_mask, clothes, all_clothes_label,
+                               pose, self.gen_noise(shape)], dim=1)
+
+        arm_label = self.G1(G1_in)
+
+        arm_label = self.sigmoid(arm_label)
+
+        armlabel_map = generate_discrete_label(arm_label.detach(), 14, False)
+        dis_label = generate_discrete_label(arm_label.detach(), 14)
+
+        # TODO: here we can compare `armlabel_map` and `label` --> compare result of G1
+        # save_lab_tensor(armlabel_map) and save_lab_tensor(label)
+
+        # masked_label is GT used in train stage
+        # change `masked_label` to `dis_label` which is generated from G1
+        if self.opt.pafs_G2:
+            G2_in = torch.cat([pre_clothes_mask, clothes, dis_label,
+                               pose, pafs, self.gen_noise(shape)], dim=1)
+        else:
+            G2_in = torch.cat([pre_clothes_mask, clothes, dis_label,
+                               pose, self.gen_noise(shape)], dim=1)
+
+        fake_cl = self.G2(G2_in)
+        fake_cl = self.sigmoid(fake_cl)
+
+        fake_cl_dis = torch.FloatTensor((fake_cl.cpu().numpy() > 0.5).astype(np.float)).cuda()
+        fake_cl_dis = morpho(fake_cl_dis, 1, True)
+
+        # TODO: here we can compare `fake_cl` and `???` --> compare result of G2 / warping
+        # save_rgb_tensor(fake_cl) and save_rgb_tensor
+        self.debugger.save_rgb_tensor(fake_cl, 'clothMask_Warp')
+        self.debugger.save_rgb_tensor(label == 4, 'clothMask_GT')
+        self.debugger.save_diff_tensor(fake_cl, label == 4, 'clothMask_diff')
+
+        new_arm1_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 11).astype(np.float)).cuda()
+        new_arm2_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 13).astype(np.float)).cuda()
+        fake_cl_dis = fake_cl_dis*(1 - new_arm1_mask)*(1 - new_arm2_mask)
+        fake_cl_dis *= mask_fore
+
+        arm1_occ = clothes_mask * new_arm1_mask
+        arm2_occ = clothes_mask * new_arm2_mask
+        bigger_arm1_occ = morpho(arm1_occ, 10)
+        bigger_arm2_occ = morpho(arm2_occ, 10)
+        arm1_full = arm1_occ + (1 - clothes_mask) * arm1_mask
+        arm2_full = arm2_occ + (1 - clothes_mask) * arm2_mask
+        armlabel_map *= (1 - new_arm1_mask)
+        armlabel_map *= (1 - new_arm2_mask)
+        armlabel_map = armlabel_map * (1 - arm1_full) + arm1_full * 11
+        armlabel_map = armlabel_map * (1 - arm2_full) + arm2_full * 13
+        armlabel_map *= (1-fake_cl_dis)
+        dis_label = encode(armlabel_map, armlabel_map.shape)
+
+        self.debugger.save_rgb_tensor(clothes, 'cloth_1_before_STN')
+
+        fake_c, warped, warped_mask, warped_grid = \
+            self.Unet(clothes, fake_cl_dis, pre_clothes_mask, grid)
+
+        self.debugger.save_rgb_tensor(warped, 'cloth_2_after_STN')
+
+        mask = fake_c[:, 3, :, :]
+        mask = self.sigmoid(mask)*fake_cl_dis
+        fake_c = self.tanh(fake_c[:, 0:3, :, :])
+
+        self.debugger.save_rgb_tensor(fake_c, 'cloth_3_after_refine')
+
+        fake_c = fake_c*(1-mask)+mask*warped
+
+        self.debugger.save_rgb_tensor(fake_c, 'cloth_4_after_comp')
+        self.debugger.save_rgb_tensor(real_image*clothes_mask, 'cloth_0_GTl')
+
+        skin_color = self.ger_average_color((arm1_mask + arm2_mask - arm2_mask * arm1_mask),
+                                            (arm1_mask + arm2_mask - arm2_mask * arm1_mask) * real_image)
+        occlude = (1 - bigger_arm1_occ * (arm2_mask + arm1_mask + clothes_mask)) * \
+            (1 - bigger_arm2_occ * (arm2_mask + arm1_mask + clothes_mask))
+        img_hole_hand = img_fore * (1 - clothes_mask) * occlude * (1 - fake_cl_dis)
+        # change `comp_fake_c` to `fake_c`
+        # change `masked_label` to `dis_label`
+        if self.opt.pafs_Content:
+            G_in = torch.cat([img_hole_hand, dis_label, fake_c,
+                              skin_color, pafs, self.gen_noise(shape)], dim=1)
+        else:
+            G_in = torch.cat([img_hole_hand, dis_label, fake_c,
+                              skin_color, self.gen_noise(shape)], dim=1)
+
+        # G_in = torch.cat([img_hole_hand, dis_label, fake_c, skin_color, self.gen_noise(shape)], 1)
+        fake_image = self.G(G_in)
+        fake_image = self.tanh(fake_image)
+
+        return [fake_image, real_image,
+                clothes, real_image*clothes_mask, fake_c,
+                arm_label, fake_cl]

@@ -6,6 +6,7 @@ from options.train_options import TrainOptions
 from data.data_loader import CreateDataLoader
 from models.models import create_model
 import util.util as util
+from util.save_options import show_opt
 import os
 import numpy as np
 import torch
@@ -124,11 +125,15 @@ def main():
     handle_DDP(rank)
     torch.backends.cudnn.benchmark = True
 
+    expr_dir = os.path.join(opt.checkpoints_dir, opt.name)
+    if not os.path.exists(expr_dir) and MAIN_DEVICE:
+        os.makedirs(expr_dir)
+        show_opt(opt, save_dir=expr_dir)
     iter_path = os.path.join(opt.checkpoints_dir, opt.name, 'iter.txt')
     logger_dir = os.path.join('runs', opt.name)
-    img_path = os.path.join('sample', opt.name)
-    img_base = os.path.join('sample', opt.name, '{}.jpg')
-    if not os.path.exists(img_path):
+    img_path = os.path.join('sample', opt.name, 'train')
+    img_base = os.path.join('sample', opt.name, 'train', '{}.jpg')
+    if not os.path.exists(img_path) and MAIN_DEVICE:
         os.makedirs(img_path)
 
     writer = SummaryWriter(logger_dir) if MAIN_DEVICE else None
