@@ -1512,21 +1512,20 @@ class BoundedGridLocNet(nn.Module):
     def forward(self, x):
         batch_size = x.size(0)
         points = F.tanh(self.cnn(x))
-        coor=points.view(batch_size, -1, 2)
+        coor = points.view(batch_size, -1, 2)
         # coor+=torch.randn(coor.shape).cuda()/10
-        row=self.get_row(coor,5)
-        col=self.get_col(coor,5)
-        rx,ry,cx,cy=torch.tensor(0.08).cuda(),torch.tensor(0.08).cuda()\
-            ,torch.tensor(0.08).cuda(),torch.tensor(0.08).cuda()
-        row_x,row_y=row[:,:,0],row[:,:,1]
-        col_x,col_y=col[:,:,0],col[:,:,1]
-        rx_loss=torch.max(rx,row_x).mean()
-        ry_loss=torch.max(ry,row_y).mean()
-        cx_loss=torch.max(cx,col_x).mean()
-        cy_loss=torch.max(cy,col_y).mean()
+        row = self.get_row(coor, 5)
+        col = self.get_col(coor, 5)
+        rx, ry, cx, cy = torch.tensor(0.08).cuda(), torch.tensor(0.08).cuda(), \
+            torch.tensor(0.08).cuda(), torch.tensor(0.08).cuda()
+        row_x, row_y = row[:, :, 0], row[:, :, 1]
+        col_x, col_y = col[:, :, 0], col[:, :, 1]
+        rx_loss = torch.max(rx, row_x).mean()
+        ry_loss = torch.max(ry, row_y).mean()
+        cx_loss = torch.max(cx, col_x).mean()
+        cy_loss = torch.max(cy, col_y).mean()
 
-
-        return  coor,rx_loss,ry_loss,cx_loss,cy_loss
+        return coor, rx_loss, ry_loss, cx_loss, cy_loss
 
     def get_row(self,coor,num):
         sec_dic=[]
