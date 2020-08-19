@@ -26,9 +26,10 @@ def make_dataset(dir):
     # print(dir, f)
     dirs = os.listdir(dir)
     for img in dirs:
-
+        suffix = img.split('.')[-1]
+        if suffix not in ['json', 'png', 'jpg']:
+            continue
         path = os.path.join(dir, img)
-        #print(path)
         images.append(path)
     return images
 

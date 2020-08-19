@@ -94,17 +94,22 @@ class SSIMScore(BaseEvaluation):
                     'std': np.std(ssim_list)}
         return res_dict
 
-    def save_result(self, res, path):
+    def save_result(self, res, path, name=None):
         mean_list = res['mean']
         std_list = res['std']
         res_strs = [
             'MEAN  : {}'.format(float(mean_list)),
             'STD   : {}'.format(float(std_list)),
         ]
-        with open(op.join(path, 'SSIM.txt'), 'w') as file:
+        if name is not None:
+            res_strs = ['+---'+res for res in res_strs]
+        with open(op.join(path, 'SSIM.txt'), 'a+') as file:
+            if name is not None:
+                file.write('+--{}\n'.format(name))
             for r in res_strs:
                 print(r)
             file.write('\n'.join(res_strs))
+            file.write('\n\n')
 
 
 class IncepTionScore(BaseEvaluation):
@@ -159,7 +164,7 @@ class IncepTionScore(BaseEvaluation):
         pred = self.model(img)
         return F.softmax(pred, dim=1).cpu().numpy()
 
-    def save_result(self, res, path):
+    def save_result(self, res, path, name=None):
         mean = res['mean']
         std = res['std']
         splits = res['splits']
@@ -168,7 +173,12 @@ class IncepTionScore(BaseEvaluation):
             'MEAN  : {}'.format(float(mean)),
             'STD   : {}'.format(float(std))
         ]
-        with open(op.join(path, 'Inception.txt'), 'w') as file:
+        if name is not None:
+            res_strs = ['+---'+res for res in res_strs]
+        with open(op.join(path, 'Inception.txt'), 'a+') as file:
+            if name is not None:
+                file.write('+--{}\n'.format(name))
             for r in res_strs:
                 print(r)
             file.write('\n'.join(res_strs))
+            file.write('\n\n')

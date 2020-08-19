@@ -1,14 +1,16 @@
 from util.evaluation import IncepTionScore, SSIMScore
 
+import os
 import os.path as op
 
 import torch
 from torch.utils.data import DataLoader
 from data.eval_dataset import InceptionDataset, SSIMDataset
 from options.train_options import TrainOptions
+from options.test_options import TestOptions
 
 
-opt = TrainOptions().parse()
+opt = TestOptions().parse()
 
 assert opt.eval_ssim or opt.eval_inception, "At least given an evaluation option"
 
@@ -26,7 +28,7 @@ with torch.no_grad():
     res_dict = eval_model.eval_dataset()
 
 save_dir = op.join('sample', opt.which_ckpt, 'eval')
-if opt.name:
-    save_dir = op.join(save_dir, opt.name)
-
-eval_model.save_result(res_dict, save_dir)
+if opt.remove_old:
+    txt_to_remove = 'SSIM.txt' if opt.eval_ssim else 'Inception.txt'
+    os.remove(op.join(save_dir, txt_to_remove))
+eval_model.save_result(res_dict, save_dir, opt.name)

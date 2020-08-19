@@ -9,8 +9,10 @@ import util.util as util
 from util.save_options import show_opt
 import os
 import numpy as np
+from PIL import Image
 import torch
 from torch.autograd import Variable
+from torchvision.transforms import ToTensor
 from tensorboardX import SummaryWriter
 import cv2
 
@@ -78,6 +80,13 @@ def changearm(old_label):
     return label
 
 
+def load_grid(grid_pth):
+    assert os.path.exists(grid_pth)
+    grid_pil = Image.open(grid_pth)
+    grid_ten = ToTensor()(grid_pil)
+    return (grid_ten.unsqueeze(0) * 2 - 1).cuda()
+
+
 os.makedirs('sample', exist_ok=True)
 opt = TestOptions().parse()
 show_opt(opt)
@@ -122,6 +131,8 @@ save_delta = total_steps % opt.save_latest_freq
 
 step = 0
 
+grid = load_grid(opt.grid_pth)
+
 for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     epoch_start_time = time.time()
     if epoch != start_epoch:
@@ -131,10 +142,6 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
         iter_start_time = time.time()
         total_steps += opt.batchSize
         epoch_iter += opt.batchSize
-
-        # whether to collect output images
-        #save_fake = total_steps % opt.display_freq == display_delta
-        save_fake = True
 
         ##add gaussian noise channel
         ## wash the label
@@ -149,16 +156,14 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
 
         ############## Forward Pass ######################
         with torch.no_grad():
-            # import pdb
-            # pdb.set_trace()
             fake_image, real_image, real_cloth, cloth_gt, cloth_warp, \
                 fake_label, clothes_mask = \
-                model(Variable(data['label'].cuda()), Variable(data['edge'].cuda()),
-                      Variable(img_fore.cuda()), Variable(mask_clothes.cuda()),
-                      Variable(data['color'].cuda()), Variable(all_clothes_label.cuda()),
-                      Variable(data['image'].cuda()), Variable(data['pose'].cuda()),
-                      Variable(data['image'].cuda()), Variable(mask_fore.cuda()),
-                      data['pafs'], data['name'], debugger)
+                model(data['label'].cuda(), data['edge'].cuda(),
+                      img_fore.cuda(), mask_clothes.cuda(),
+                      data['color'].cuda(), all_clothes_label.cuda(),
+                      data['image'].cuda(), data['pose'].cuda(),
+                      grid, mask_fore.cuda(),
+                      data['pafs'].cuda(), data['name'], debugger)
 
         ############## Display results and errors ##########
 
@@ -190,18 +195,3 @@ for epoch in range(start_epoch, opt.niter + opt.niter_decay + 1):
     print('End of epoch %d / %d \t Time Taken: %d sec' %
           (epoch, opt.niter + opt.niter_decay, time.time() - epoch_start_time))
     break
-
-    ### save model for this epoch
-    if epoch % opt.save_epoch_freq == 0:
-        print('saving the model at the end of epoch %d, iters %d' % (epoch, total_steps))
-        model.module.save('latest')
-        model.module.save(epoch)
-        # np.savetxt(iter_path, (epoch+1, 0), delimiter=',', fmt='%d')
-
-    ### instead of only training the local enhancer, train the entire network after certain iterations
-    if (opt.niter_fix_global != 0) and (epoch == opt.niter_fix_global):
-        model.module.update_fixed_params()
-
-    ### linearly decay learning rate after certain iterations
-    if epoch > opt.niter:
-        model.module.update_learning_rate()

@@ -19,9 +19,6 @@ class SSIMDataset(Dataset):
             self.save_dir = op.join(self.save_dir, opt.name)
         self.img_dir = op.join(self.save_dir, 'img')
         self.img_list = [img for img in os.listdir(self.img_dir) if 'combine' not in img]
-        self.transform = transforms.Compose([
-            transforms.ToTensor()
-        ])
 
     def toTensor(self, img):
         img = cv2.imread(img)
@@ -40,7 +37,7 @@ class SSIMDataset(Dataset):
         # img_R_ten = self.transform(Image.open(img_R))
         img_F_ten = self.toTensor(img_F)
         img_R_ten = self.toTensor(img_R)
-        return {'img_F': img_F_ten, 'img_R': img_R_ten}
+        return {'img_F': img_F_ten, 'img_R': img_R_ten, 'name': img_name}
 
 
 class InceptionDataset(Dataset):
@@ -63,7 +60,7 @@ class InceptionDataset(Dataset):
         img_name = self.img_list[index]
         img = op.join(self.img_dir, img_name)
         img = self.transform(Image.open(img))
-        return {'img': img}
+        return {'img': img, 'name': img_name}
 
     def __len__(self):
         return len(self.img_list)

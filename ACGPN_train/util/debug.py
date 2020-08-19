@@ -58,6 +58,9 @@ class ImageDebugger:
             return
         img_name = self.get_name_base(name, img_ID)
         ten = ten.cpu() if ten.is_cuda else ten
+        if ten.shape[1] != 1:
+            # TODO: convert to single channel tensor
+            pass
         ten_np = np.squeeze(ten.numpy())
         ten_rgb = np.zeros((ten.size(2), ten.size(3), 3))
         for lab in range(14):
