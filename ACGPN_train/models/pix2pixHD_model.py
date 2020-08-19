@@ -158,6 +158,7 @@ class Pix2PixHDModel(BaseModel):
             G_in_ch += paf_chns
 
         ##### define networks
+        self.STN = self.to_cuda(networks.STNNet())
         self.Unet = self.to_cuda(networks.define_UnetMask(4, self.gpu_ids))
         # G1_in: [pre_clothes_mask, clothes, all_clothes_label, pose, self.gen_noise(shape)]
         # channels: [1,                3,           14,           18,       1] = 37
@@ -226,7 +227,11 @@ class Pix2PixHDModel(BaseModel):
                 print('------------- Only training the local enhancer ork (for %d epochs) ------------' % opt.niter_fix_global)
                 print('The layers that are finetuned are ', sorted(finetune_list))
             else:
-                params = list(self.Unet.parameters())+list(self.G.parameters())+list(self.G1.parameters())+list(self.G2.parameters())
+                params = list(self.STN.parameters()) + \
+                    list(self.Unet.parameters()) + \
+                    list(self.G.parameters()) + \
+                    list(self.G1.parameters()) + \
+                    list(self.G2.parameters())
             self.optimizer_G = torch.optim.Adam(params, lr=0.0002, betas=(opt.beta1, 0.999))
 
             # optimizer D
@@ -236,6 +241,7 @@ class Pix2PixHDModel(BaseModel):
             # load networks
             if not self.isTrain or opt.continue_train or opt.load_pretrain:
                 pretrained_path = '' if not self.isTrain else opt.load_pretrain
+                self.load_network(self.STN, 'STN', opt.which_epoch, pretrained_path)
                 self.load_network(self.Unet, 'U', opt.which_epoch, pretrained_path)
                 self.load_network(self.G1, 'G1', opt.which_epoch, pretrained_path)
                 self.load_network(self.G2, 'G2', opt.which_epoch, pretrained_path)
@@ -372,9 +378,15 @@ class Pix2PixHDModel(BaseModel):
         ## construct full label map
         armlabel_map = armlabel_map*(1-fake_cl_dis)+fake_cl_dis*4
 
-        fake_c, warped, warped_mask, rx, ry, cx, cy, rg, cg = \
-            self.Unet(clothes, clothes_mask, pre_clothes_mask)
-        #ipdb.set_trace()
+        warped, warped_mask, rx, ry, cx, cy, rg, cg = self.STN(
+            clothes,
+            torch.cat([pre_clothes_mask, clothes_mask, clothes], 1),
+            pre_clothes_mask
+        )
+        # fake_c = self.Unet(warped.detach(), clothes_mask.detach())
+        fake_c = self.Unet(warped, clothes_mask)
+        # fake_c, warped, warped_mask, rx, ry, cx, cy, rg, cg = \
+        #     self.Unet(clothes, clothes_mask, pre_clothes_mask)
         # fake_c --> 4 channel
         # tanh(0~2) : T_c^R  (refined cloth in Eq 6)
         # sigmoid(3): \alpha (mask in Eq 6)
@@ -447,8 +459,6 @@ class Pix2PixHDModel(BaseModel):
                     loss_G_GAN_Feat += D_weights * feat_weights * \
                         self.criterionFeat(pred_fake[i][j], pred_real[i][j].detach()) * self.opt.lambda_feat
 
-        #ipdb.set_trace()
-
         # VGG feature matching loss
         loss_G_VGG = 0
         loss_G_VGG += self.criterionVGG.warp(warped, real_image*clothes_mask) + \
@@ -465,27 +475,26 @@ class Pix2PixHDModel(BaseModel):
         L1_loss += self.criterionFeat(comp_fake_c, real_image*clothes_mask) * self.opt.refinedCloth
         L1_loss += self.criterionFeat(composition_mask, clothes_mask) * self.opt.compMask
 
-        # old loss codes
-        # L1_loss += self.criterionFeat(warped_mask, clothes_mask) + \
-        #     self.criterionFeat(warped, real_image*clothes_mask)  # L4
-        # L1_loss += self.criterionFeat(fake_cl, clothes_mask)  # add L2 loss for predicted_mask
-        # L1_loss += self.criterionFeat(fake_c, real_image*clothes_mask)*0.2
-        # G_in = torch.cat([img_hole_hand, masked_label, real_image*clothes_mask, skin_color, self.gen_noise(shape)], 1)
-        # L1_loss += self.criterionFeat(comp_fake_c, real_image*clothes_mask)*10
-        # L1_loss += self.criterionFeat(composition_mask, clothes_mask)
-
-        #
-        # style_loss=self.criterionStyle(fake_image, real_image)*200
-
         # loss_G_GAN_Feat=L1_loss
         style_loss = L1_loss
         # Only return the fake_B image if necessary to save BW
+        image_dict = {
+            'pred_cloth_mask': fake_cl,
+            'unet_cloth': fake_c,
+            'refined_cloth': comp_fake_c,
+            'comp_mask': composition_mask,
+            'warped_cloth': warped,
+            'warped_mask': warped_mask,
+            'tryon_mask_wo_cloth': masked_label,
+            'tryon_res': fake_image
+        }
         return [self.loss_filter(loss_G_GAN, loss_G_GAN_Feat, loss_G_VGG, loss_D_real, loss_D_fake),
                 fake_c, comp_fake_c, dis_label, L1_loss, style_loss, fake_cl, warped, clothes, CE_loss,
-                rx*0.1, ry*0.1, cx*0.1, cy*0.1, rg*0.1, cg*0.1]
+                rx*0.1, ry*0.1, cx*0.1, cy*0.1, rg*0.1, cg*0.1, image_dict]
 
     def save(self, which_epoch):
         self.save_network(self.Unet, 'U', which_epoch, self.gpu_ids)
+        self.save_network(self.STN, 'STN', which_epoch, self.gpu_ids)
         self.save_network(self.G, 'G', which_epoch, self.gpu_ids)
         self.save_network(self.G1, 'G1', which_epoch, self.gpu_ids)
         self.save_network(self.G2, 'G2', which_epoch, self.gpu_ids)
@@ -537,6 +546,7 @@ class InferenceModel(Pix2PixHDModel):
             G_in_ch += paf_chns
         ##### define networks
         with torch.no_grad():
+            self.STN = self.to_cuda(networks.STNNet()).eval()
             self.Unet = self.to_cuda(networks.define_UnetMask(4, self.gpu_ids)).eval()
             self.G1 = self.to_cuda(networks.define_Refine(G1_in_ch, 14, self.gpu_ids)).eval()
             self.G2 = self.to_cuda(networks.define_Refine(G2_in_ch, 1, self.gpu_ids)).eval()
@@ -551,6 +561,7 @@ class InferenceModel(Pix2PixHDModel):
 
         # load networks
         pretrained_path = os.path.join(opt.ckpt_base, opt.which_ckpt)
+        self.load_network(self.STN, 'STN', opt.which_epoch, pretrained_path)
         self.load_network(self.Unet, 'U', opt.which_epoch, pretrained_path)
         self.load_network(self.G1, 'G1', opt.which_epoch, pretrained_path)
         self.load_network(self.G2, 'G2', opt.which_epoch, pretrained_path)
@@ -558,7 +569,6 @@ class InferenceModel(Pix2PixHDModel):
 
     def update_debugger(forward_func):
         def update(*args):
-            print(args[-2])
             name = args[-2]
             args[0].debugger.set_img_name(name)
             return forward_func(*args)
@@ -577,7 +587,6 @@ class InferenceModel(Pix2PixHDModel):
         clothes = clothes * pre_clothes_mask
 
         shape = pre_clothes_mask.shape
-
         if self.opt.pafs_G1:
             G1_in = torch.cat([pre_clothes_mask, clothes, all_clothes_label,
                                pose, pafs, self.gen_noise(shape)], dim=1)
@@ -591,6 +600,8 @@ class InferenceModel(Pix2PixHDModel):
 
         armlabel_map = generate_discrete_label(arm_label.detach(), 14, False)
         dis_label = generate_discrete_label(arm_label.detach(), 14)
+
+        self.debugger.save_lab_tensor(armlabel_map, 'parsing_G1')
 
         # TODO: here we can compare `armlabel_map` and `label` --> compare result of G1
         # save_lab_tensor(armlabel_map) and save_lab_tensor(label)
@@ -608,13 +619,15 @@ class InferenceModel(Pix2PixHDModel):
         fake_cl = self.sigmoid(fake_cl)
 
         fake_cl_dis = torch.FloatTensor((fake_cl.cpu().numpy() > 0.5).astype(np.float)).cuda()
+        self.debugger.save_lab_tensor(fake_cl_dis, 'clothMask_G2')
         fake_cl_dis = morpho(fake_cl_dis, 1, True)
+        self.debugger.save_lab_tensor(fake_cl_dis, 'clothMask_G2_morphing')
 
         # TODO: here we can compare `fake_cl` and `???` --> compare result of G2 / warping
         # save_rgb_tensor(fake_cl) and save_rgb_tensor
-        self.debugger.save_rgb_tensor(fake_cl, 'clothMask_Warp')
+        # self.debugger.save_rgb_tensor(fake_cl, 'clothMask_Warp')
         self.debugger.save_rgb_tensor(label == 4, 'clothMask_GT')
-        self.debugger.save_diff_tensor(fake_cl, label == 4, 'clothMask_diff')
+        self.debugger.save_diff_tensor(fake_cl_dis, label == 4, 'clothMask_diff')
 
         new_arm1_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 11).astype(np.float)).cuda()
         new_arm2_mask = torch.FloatTensor((armlabel_map.cpu().numpy() == 13).astype(np.float)).cuda()
@@ -634,12 +647,22 @@ class InferenceModel(Pix2PixHDModel):
         armlabel_map *= (1-fake_cl_dis)
         dis_label = encode(armlabel_map, armlabel_map.shape)
 
+        self.debugger.save_lab_tensor(armlabel_map, 'armlabel_map')
         self.debugger.save_rgb_tensor(clothes, 'cloth_1_before_STN')
 
-        fake_c, warped, warped_mask, warped_grid = \
-            self.Unet(clothes, fake_cl_dis, pre_clothes_mask, grid)
+        warped, warped_mask, rx, ry, cx, cy, warped_grid = self.STN(
+            clothes,
+            torch.cat([pre_clothes_mask, fake_cl_dis, clothes], 1),
+            pre_clothes_mask,
+            grid
+        )
+        fake_c = self.Unet(warped, clothes_mask)
+
+        # fake_c, warped, warped_mask, warped_grid = \
+        #     self.Unet(clothes, fake_cl_dis, pre_clothes_mask, grid)
 
         self.debugger.save_rgb_tensor(warped, 'cloth_2_after_STN')
+        self.debugger.save_rgb_tensor(warped_grid, 'warped_grid')
 
         mask = fake_c[:, 3, :, :]
         mask = self.sigmoid(mask)*fake_cl_dis
@@ -659,6 +682,7 @@ class InferenceModel(Pix2PixHDModel):
         img_hole_hand = img_fore * (1 - clothes_mask) * occlude * (1 - fake_cl_dis)
         # change `comp_fake_c` to `fake_c`
         # change `masked_label` to `dis_label`
+        # self.debugger.save_lab_tensor(dis_label, 'parsing_final')
         if self.opt.pafs_Content:
             G_in = torch.cat([img_hole_hand, dis_label, fake_c,
                               skin_color, pafs, self.gen_noise(shape)], dim=1)

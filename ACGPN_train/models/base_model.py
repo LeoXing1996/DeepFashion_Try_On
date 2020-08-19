@@ -14,7 +14,10 @@ class BaseModel(torch.nn.Module):
         self.gpu_ids = opt.gpu_ids
         self.isTrain = opt.isTrain
         self.Tensor = torch.cuda.FloatTensor if self.gpu_ids else torch.Tensor
-        self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
+        if opt.name is not None:  # --> train with exp namd
+            self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
+        else:  # --> test mode may be no name, but self.save_dir is not used as well
+            self.save_dir = opt.checkpoints_dir
         # add code for DDP
         self.rank = rank
         # if rank:
@@ -76,33 +79,21 @@ class BaseModel(torch.nn.Module):
         elif self.rank:
             self.load_dist(network, save_path)
         else:
-            network.load_state_dict(torch.load(save_path))
-            # except:
-            #     pretrained_dict = torch.load(save_path)
-            #     model_dict = network.state_dict()
-            #     try:
-            #         pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-            #         network.load_state_dict(pretrained_dict)
-            #         if self.opt.verbose:
-            #             print('Pretrained network %s has excessive layers; Only loading layers that are used' % network_label)
-            #     except:
-            #         print('Pretrained network %s has fewer layers; The following are not initialized:' % network_label)
-            #         for k, v in pretrained_dict.items():
-            #             if v.size() == model_dict[k].size():
-            #                 model_dict[k] = v
-            #
-            #         if sys.version_info >= (3,0):
-            #             not_initialized = set()
-            #         else:
-            #             from sets import Set
-            #             not_initialized = Set()
-            #
-            #         for k, v in model_dict.items():
-            #             if k not in pretrained_dict or v.size() != pretrained_dict[k].size():
-            #                 not_initialized.add(k.split('.')[0])
-            #
-            #         print(sorted(not_initialized))
-            #         network.load_state_dict(model_dict)
+            # import pdb
+            # pdb.set_trace()
+            state_dict = torch.load(save_path)
+            state_dict = self.convert_state_dict(state_dict)
+            network.load_state_dict(state_dict)
+
+    def convert_state_dict(self, state_dict):
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            if 'module' in k:
+                new_state_dict[k[7:]] = v
+            else:
+                return state_dict
+        return new_state_dict
 
     def update_learning_rate():
         pass

@@ -10,7 +10,7 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--display_freq', type=int, default=100, help='frequency of showing training results on screen')
         self.parser.add_argument('--print_freq', type=int, default=100, help='frequency of showing training results on console')
         self.parser.add_argument('--save_latest_freq', type=int, default=1000, help='frequency of saving the latest results')
-        self.parser.add_argument('--save_epoch_freq', type=int, default=10, help='frequency of saving checkpoints at the end of epochs')
+        self.parser.add_argument('--save_epoch_freq', type=int, default=1, help='frequency of saving checkpoints at the end of epochs')
         self.parser.add_argument('--no_html', action='store_true', help='do not save intermediate training results to [opt.checkpoints_dir]/[opt.name]/web/')
         self.parser.add_argument('--debug', action='store_true', help='only do one epoch and displays at each iteration')
 
@@ -35,10 +35,10 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument('--pool_size', type=int, default=0, help='the size of image buffer that stores previously generated images')
 
         # for evaluate loss
-        self.parser.add_argument('--warpedMask', type=float, default=1)
+        self.parser.add_argument('--warpedMask', type=float, default=5)
         self.parser.add_argument('--predMask', type=float, default=0)
         self.parser.add_argument('--compMask', type=float, default=1)
-        self.parser.add_argument('--warpedCloth', type=float, default=1)
+        self.parser.add_argument('--warpedCloth', type=float, default=5)
         self.parser.add_argument('--unetCloth', type=float, default=0.2)
         self.parser.add_argument('--refinedCloth', type=float, default=10)
         self.parser.add_argument('--e2eContent', action='store_true', default=False, help='end2end training of content fusion module')

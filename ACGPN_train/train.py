@@ -111,9 +111,15 @@ def save_model(model, epoch, rank=None):
         model.save(epoch)
 
 
-def debug_ddp_grad(model, step, rank, show_num=10):
+def debug_ddp_grad(model, step, rank, show_num=5):
     for name, ten in model.named_parameters():
-        print('Step: {} Rank: {} Name: {} Grad: {}'.format(step, rank, name, ten.view(-1)[:show_num]))
+        print('Step: {} Rank: {} Name: {} Grad: {}'.format(step, rank, name, ten.grad.view(-1)[:show_num]))
+        break
+
+
+def debug_weight(model, step, rank, show_num=5):
+    for name, ten in model.named_parameters():
+        print('Step: {} Rank: {} Name: {} Weight: {}'.format(step, rank, name, ten.view(-1)[:show_num]))
         break
 
 
@@ -185,11 +191,11 @@ def main():
             ############## Forward Pass ######################
             losses, fake_image, real_image, input_label, L1_loss, style_loss, \
                 clothes_mask, warped, refined, CE_loss, \
-                rx, ry, cx, cy, rg, cg = model(Variable(data['label'].cuda()), Variable(data['edge'].cuda()),
-                                                Variable(img_fore.cuda()), Variable(mask_clothes.cuda()),
-                                                Variable(data['color'].cuda()), Variable(all_clothes_label.cuda()),
-                                                Variable(data['image'].cuda()), Variable(data['pose'].cuda()),
-                                                Variable(data['pafs'].cuda()), Variable(data['mask'].cuda()))
+                rx, ry, cx, cy, rg, cg, img_dict = model(data['label'].cuda(), data['edge'].cuda(),
+                                                         img_fore.cuda(), mask_clothes.cuda(),
+                                                         data['color'].cuda(), all_clothes_label.cuda(),
+                                                         data['image'].cuda(), data['pose'].cuda(),
+                                                         data['pafs'].cuda(), data['mask'].cuda())
 
             # sum per device losses
             losses = [torch.mean(x) if not isinstance(x, int) else x for x in losses]
@@ -206,6 +212,7 @@ def main():
             if rank is None:
                 model.module.optimizer_G.zero_grad()
                 loss_G.backward()
+                debug_ddp_grad(model.module.Unet.stn, step, None)
                 model.module.optimizer_G.step()
 
                 model.module.optimizer_D.zero_grad()
@@ -220,17 +227,24 @@ def main():
                 loss_D.backward()
                 model.optimizer_D.step()
 
-                if opt.debug:  # here we try to check grad of model.G
-                    debug_ddp_grad(model.G1, step, rank)
+                # if opt.debug:  # here we try to check grad of model.G
+                #     debug_ddp_grad(model.Unet.module.stn.tps, step, rank)
+                #     dist.barrier()
 
             ############## Display results and errors ##########
             if step % opt.display_freq == 0 and MAIN_DEVICE:
                 a = generate_label_color(generate_label_plain(input_label), opt.label_nc).float().cuda()
-                b = real_image.float().cuda()
-                c = fake_image.float().cuda()
-                d = torch.cat([clothes_mask, clothes_mask, clothes_mask], 1)
-                e = warped
-                f = refined
+                # b = real_image.float().cuda()
+                b = data['image'].cuda()
+                # c = fake_image.float().cuda()
+                c = img_dict['tryon_res']
+                # d = torch.cat([clothes_mask, clothes_mask, clothes_mask], 1)
+                pred_cloth_mask = img_dict['pred_cloth_mask']
+                d = torch.cat([pred_cloth_mask, pred_cloth_mask, pred_cloth_mask], 1)
+                # e = warped
+                e = img_dict['warped_cloth']
+                # f = refined
+                f = img_dict['refined_cloth']
                 combine = torch.cat([a[0], b[0], c[0], d[0], e[0], f[0]], 2).squeeze()
                 cv_img = (combine.permute(1, 2, 0).detach().cpu().numpy()+1)/2
                 writer.add_image('combine', (combine.data + 1) / 2.0, step)
@@ -260,7 +274,7 @@ def main():
             time_stamp = datetime.datetime.now()
             now = time_stamp.strftime('%Y.%m.%d-%H:%M:%S')
             if MAIN_DEVICE:
-                print('{}:{}:[step-{}]--[loss_G-{:.6f}]--[loss_D-{:.6f}]--[ETA-{}]'.format(now, epoch_iter, step, loss_G, loss_D, eta))
+                print('{}:{}:[EP-{}]--[step-{}]--[loss_G-{:.3f}]--[loss_D-{:.3f}]--[ETA-{}]'.format(now, epoch_iter, epoch, step, loss_G, loss_D, eta))
 
             ### save latest model
             if total_steps % opt.save_latest_freq == save_delta and MAIN_DEVICE:

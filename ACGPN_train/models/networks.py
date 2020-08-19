@@ -7,6 +7,7 @@ import functools
 from torch.autograd import Variable
 import numpy as np
 import torch.nn.functional as F
+from torchvision import models
 import math
 import itertools
 from grid_sample import grid_sample
@@ -459,7 +460,7 @@ class AttentionNorm(nn.Module):
 class UnetMask(nn.Module):
     def __init__(self, input_nc, output_nc=3):
         super(UnetMask, self).__init__()
-        self.stn = STNNet()
+        # self.stn = STNNet()
         nl = nn.InstanceNorm2d
         self.conv1 = nn.Sequential(*[nn.Conv2d(input_nc, 64, kernel_size=3, stride=1, padding=1), nl(64), nn.ReLU(),
                                      nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1), nl(64), nn.ReLU()])
@@ -510,16 +511,17 @@ class UnetMask(nn.Module):
                                      nn.Conv2d(64, output_nc, kernel_size=3, stride=1, padding=1)
                                      ])
 
-    def forward(self, input, refer, mask, grid=None):
+    # def forward(self, input, refer, mask, grid=None):
+    def forward(self, input, refer):
         # input: clothes
         # refer: clothes_mask
         # mask:  pre_clothes_mask
-        if grid is not None:
-            input, warped_mask, rx, ry, cx, cy, grid = \
-                self.stn(input, torch.cat([mask, refer, input], 1), mask, grid)
-        else:
-            input, warped_mask, rx, ry, cx, cy, rg, cg = \
-                self.stn(input, torch.cat([mask, refer, input], 1), mask)
+        # if grid is not None:
+        #     input, warped_mask, rx, ry, cx, cy, grid = \
+        #         self.stn(input, torch.cat([mask, refer, input], 1), mask, grid)
+        # else:
+        #     input, warped_mask, rx, ry, cx, cy, rg, cg = \
+        #         self.stn(input, torch.cat([mask, refer, input], 1), mask)
         conv1 = self.conv1(torch.cat([refer.detach(), input.detach()], 1))
         pool1 = self.pool1(conv1)
 
@@ -547,10 +549,11 @@ class UnetMask(nn.Module):
 
         up9 = self.up9(conv8)
         conv9 = self.conv9(torch.cat([conv1, up9], 1))
-        if grid is not None:
-            return conv9, input, warped_mask, grid
-        else:
-            return conv9, input, warped_mask, rx, ry, cx, cy, rg, cg
+        return conv9
+        # if grid is not None:
+        #     return conv9, input, warped_mask, grid
+        # else:
+        #     return conv9, input, warped_mask, rx, ry, cx, cy, rg, cg
 
 
 class Unet(nn.Module):
@@ -942,9 +945,6 @@ class NLayerDiscriminator(nn.Module):
             return res[1:]
         else:
             return self.model(input)
-
-
-from torchvision import models
 
 
 class Vgg19(torch.nn.Module):
